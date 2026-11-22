@@ -63,7 +63,7 @@ const HomePage = () => {
           </h1>
 
           <p className="text-gray-300 text-base sm:text-lg max-w-xl mt-5 leading-relaxed font-body">
-            Raw, focused academic intelligence. We scrapped the corporate clutter and built only the 3 mission-critical weapons you need to dominate your coursework.
+            Raw, focused academic intelligence. We scrapped the corporate clutter and built only the 4 mission-critical weapons you need to dominate your coursework.
           </p>
 
           {/* Action Buttons */}
@@ -72,7 +72,7 @@ const HomePage = () => {
               onClick={handleScrollToFeatures}
               className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] text-[#070a12] hover:from-[#7dd3fc] hover:to-[#38bdf8] font-extrabold text-sm uppercase tracking-wider px-7 py-3.5 rounded-2xl shadow-[0_4px_25px_rgba(14,165,233,0.4)] transition-all flex items-center gap-2.5 cursor-pointer transform hover:-translate-y-0.5 font-tag"
             >
-              <span>SPRAY THE 3 ARSENALS</span>
+              <span>SPRAY THE 4 ARSENALS</span>
               <ArrowDown className="w-4 h-4" />
             </button>
             <button
@@ -88,7 +88,7 @@ const HomePage = () => {
           <div className="mt-8 pt-6 border-t border-[#16243f] flex items-center gap-6 text-xs text-gray-400 font-medium">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[#38bdf8] animate-ping" />
-              <span className="text-gray-300 font-bold font-tag">3 ARSENALS READY</span>
+              <span className="text-gray-300 font-bold font-tag">4 ARSENALS READY</span>
             </div>
             <span>•</span>
             <span>ZERO BLOAT</span>
@@ -170,10 +170,10 @@ const HomePage = () => {
             ✦ AUTHENTIC STREET ARSENALS ✦
           </div>
           <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-white font-body">
-            The 3 Street Masterpieces
+            The 4 Street Masterpieces
           </h2>
           <p className="text-gray-400 text-sm sm:text-base max-w-lg mt-1 font-body">
-            Custom-built academic intelligence tools to crush your emails, documents, and mock exams.
+            Custom-built academic intelligence tools to crush your emails, documents, mock exams and study schedule.
           </p>
         </div>
 

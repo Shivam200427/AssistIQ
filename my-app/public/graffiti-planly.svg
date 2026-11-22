@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-label="Planly: Pomodoro timer, task cards and streak in street-art style">
+  <defs>
+    <radialGradient id="glowA" cx="50%" cy="42%" r="55%">
+      <stop offset="0" stop-color="#38bdf8" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="85%" cy="90%" r="45%">
+      <stop offset="0" stop-color="#2563eb" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#2563eb" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1222"/>
+      <stop offset="1" stop-color="#05070d"/>
+    </linearGradient>
+    <filter id="rough"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="3"/></filter>
+  </defs>
+  <rect width="500" height="500" fill="url(#wall)"/>
+  <!-- brick wall -->
+  <g stroke="#16243f" stroke-width="2" opacity="0.55">
+    <path d="M0 62H500M0 125H500M0 187H500M0 250H500M0 312H500M0 375H500M0 437H500"/>
+    <path d="M70 0V62M210 0V62M350 0V62M490 0V62M140 62V125M280 62V125M420 62V125M70 125V187M210 125V187M350 125V187M140 187V250M280 187V250M420 187V250M70 250V312M210 250V312M350 250V312M140 312V375M280 312V375M420 312V375M70 375V437M210 375V437M350 375V437M140 437V500M280 437V500M420 437V500"/>
+  </g>
+  <rect width="500" height="500" fill="url(#glowA)"/>
+  <rect width="500" height="500" fill="url(#glowB)"/>
+  <!-- spray dots -->
+  <g fill="#38bdf8" opacity="0.75">
+    <circle cx="70" cy="110" r="4"/><circle cx="92" cy="130" r="2.5"/><circle cx="430" cy="95" r="5"/><circle cx="448" cy="126" r="2"/>
+    <circle cx="60" cy="300" r="3"/><circle cx="445" cy="300" r="3.5"/><circle cx="420" cy="320" r="2"/>
+  </g>
+  <!-- tag -->
+  <text x="250" y="78" text-anchor="middle" font-family="'Permanent Marker', 'Comic Sans MS', cursive" font-size="64" fill="#f1f5f9" stroke="#0284c7" stroke-width="2" transform="rotate(-5 250 78)">Planly</text>
+  <!-- pomodoro timer, centred so it survives cropping -->
+  <g transform="translate(250 228)" filter="url(#rough)">
+    <circle r="108" fill="#0d1527" stroke="#16243f" stroke-width="6"/>
+    <circle r="88" fill="none" stroke="#16243f" stroke-width="15"/>
+    <circle r="88" fill="none" stroke="#38bdf8" stroke-width="15" stroke-linecap="round" stroke-dasharray="400 553" transform="rotate(-90)"/>
+    <text y="15" text-anchor="middle" font-family="'Permanent Marker', 'Comic Sans MS', cursive" font-size="50" fill="#f1f5f9">25:00</text>
+    <text y="48" text-anchor="middle" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-weight="800" font-size="14" letter-spacing="4" fill="#38bdf8">FOCUS</text>
+  </g>
+  <!-- drips under the timer -->
+  <g stroke="#38bdf8" stroke-width="5" stroke-linecap="round" opacity="0.8" filter="url(#rough)">
+    <path d="M205 333v26"/><path d="M238 336v40"/><path d="M290 333v20"/>
+  </g>
+  <!-- task cards -->
+  <g transform="translate(95 372)" filter="url(#rough)">
+    <rect width="150" height="44" rx="10" fill="#16243f"/><rect width="6" height="44" rx="3" fill="#a78bfa"/>
+    <rect x="18" y="13" width="18" height="18" rx="4" fill="none" stroke="#94a3b8" stroke-width="3"/>
+    <rect x="46" y="18" width="88" height="8" rx="4" fill="#94a3b8" opacity="0.6"/>
+    <rect x="160" width="150" height="44" rx="10" fill="#16243f"/><rect x="160" width="6" height="44" rx="3" fill="#34d399"/>
+    <rect x="178" y="13" width="18" height="18" rx="4" fill="#34d399"/>
+    <path d="M182 22l4 4 7-8" stroke="#05070d" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="206" y="18" width="88" height="8" rx="4" fill="#94a3b8" opacity="0.4"/>
+  </g>
+  <!-- streak -->
+  <g transform="translate(95 430)" filter="url(#rough)">
+    <rect x="0" y="6" width="26" height="26" rx="6" fill="#38bdf8" opacity="0.35"/>
+    <rect x="32" y="6" width="26" height="26" rx="6" fill="#38bdf8" opacity="0.6"/>
+    <rect x="64" y="6" width="26" height="26" rx="6" fill="#38bdf8" opacity="0.85"/>
+    <rect x="96" y="6" width="26" height="26" rx="6" fill="#38bdf8"/>
+    <rect x="128" y="6" width="26" height="26" rx="6" fill="#38bdf8"/>
+    <rect x="160" y="6" width="26" height="26" rx="6" fill="#38bdf8"/>
+    <path d="M290 40c-15 0-23-11-20-24 3-10 11-14 11-25 9 6 14 15 12 24 4-2 6-7 6-10 8 8 10 17 7 24-3 7-9 11-16 11z" fill="#fb923c"/>
+    <path d="M290 40c-7 0-10-5-8-11 2-5 6-7 7-12 5 4 7 8 7 12 2-2 3-3 3-5 3 4 4 8 2 12-2 3-5 4-11 4z" fill="#fbbf24"/>
+    <text x="212" y="28" font-family="'Permanent Marker', 'Comic Sans MS', cursive" font-size="24" fill="#f1f5f9">6</text>
+  </g>
+</svg>

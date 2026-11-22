@@ -44,6 +44,20 @@ const features = [
     stickerColor: "bg-[#2563eb]",
     pills: ["Active Recall", "Instant Distractors", "Accuracy Meter"],
     rotation: "-rotate-1",
+  },
+  {
+    id: "planly",
+    tag: "HQ // 04",
+    streetName: "PLAN HQ",
+    name: "Planly",
+    desc: "Your study command centre: Pomodoro and study timers, a drag-and-drop kanban with AI tasks, calendar, streak analytics, notes, habits and focus sounds.",
+    img: "/graffiti-planly.svg",
+    url: "/planly",
+    accent: "#38bdf8",
+    badge: "FOCUS MODE",
+    stickerColor: "bg-[#0ea5e9]",
+    pills: ["Pomodoro & Timers", "AI Kanban", "Streaks & Habits"],
+    rotation: "rotate-1",
   }
 ];
 

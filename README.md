@@ -1,6 +1,6 @@
 # AssistIQ
 
-**AssistIQ is an AI study assistant.** It summarizes your Outlook inbox, turns any PDF into structured notes you can chat with, and generates quizzes you can take on your own or play live with a whole class.
+**AssistIQ is an AI study assistant.** It summarizes your Outlook inbox, turns any PDF into structured notes you can chat with, generates quizzes you can take on your own or play live with a whole class, and gives you **Planly** — a study dashboard with timers, tasks, a calendar, analytics, notes, habits and focus sounds.
 
 | | Link |
 |---|---|
@@ -51,6 +51,23 @@
 ### 📝 Quiz Generator — `/quizgenerator`
 - Creates multiple-choice questions from a **topic** or from an **uploaded PDF**. PDF quizzes only use what's in the document.
 - Pick your answers, submit, and see your score with an explanation for each question.
+
+### 🗓️ Planly — `/planly`
+A study dashboard with nine tabs. Everything is saved in your browser on every change, works offline, and can be installed as an app.
+
+| Area | What you get |
+|---|---|
+| **Timers** | Pomodoro with custom focus/break lengths and long breaks, a study stopwatch that tracks time per subject, and a countdown (to a duration or a clock time). **Timer sync** links timers so starting one starts the others. Sound alerts and **desktop notifications** fire even when the tab is in the background, and the tab title shows the time left. |
+| **Tasks** | Drag-and-drop **kanban** (To do / In progress / Done — mouse, touch and keyboard) with pinning, sorting, difficulty levels, **tags** and **due dates**. **Assignments** group tasks by project or course with progress bars. **AI task creation** turns a goal like “prepare for my OS mid-sem on Friday” into dated tasks. |
+| **Calendar** | Month, week and day views showing tasks and focus sessions together. **Google Calendar export** downloads an `.ics` file (Google Calendar → Settings → Import), plus per-task “Add to Google Calendar” links. |
+| **Analytics** | Focus time, pomodoros, sessions and tasks per day, when you study by hour, and focus by subject — with a 7/14/30/90-day range and a data-table view. **Streaks** and a consistency heatmap, plus **shareable streak cards**: a branded PNG you can download or share to Discord, WhatsApp and more. |
+| **Notes** | Rich-text **Markdown notes** (TipTap): type `# `, `- `, `[] `, `**bold**`, `> ` and it formats live. Search, auto-titles, and `.md` download. |
+| **Habits** | Daily habit tracker with a weekly check-in grid, per-habit streaks and a 12-week history. |
+| **Sounds** | **Ambient noise generator**: brown, pink and white noise, rain, ocean waves, wind, fireplace and stream — all synthesised in the browser with Tone.js (no audio files), each with its own volume. Save and load **presets**. |
+| **Scratchpad** | A zero-friction notepad on the Timers page. Start a line with `[] ` (or tap the box) to make it a checklist item. Saved on every keystroke. |
+| **Settings** | **Dark/light mode**, a custom **accent colour**, Pomodoro intervals, and **data export** as JSON (backup/restore), CSV (tasks, sessions, habits) or a PDF report. |
+
+**Offline / install:** Planly is a PWA. After one visit it opens without a connection (only AI task creation needs the internet), and browsers offer **Install app**.
 
 ### 🎮 Live Quiz Arena — `/quizgenerator/arena/[pin]`
 - **Host:** click **Host Live Arena** on the quiz generator, or on any generated quiz. You get a 6-digit PIN and a QR code. In the lobby you can add, edit or delete questions, then start the game and move through the questions.
@@ -104,6 +121,7 @@
 | Layer | Technologies |
 |---|---|
 | Frontend | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 4, Framer Motion, React Flow, react-pdf-viewer, lucide-react |
+| Planly | Zustand (persisted state), dnd-kit (kanban), Recharts (charts), TipTap (notes), Tone.js (sound synthesis), jsPDF (reports), a service worker + web manifest (PWA) |
 | Frontend API | Next.js route handlers, Mongoose, AWS SDK v3, axios |
 | Backend | Flask, gunicorn, PyMuPDF, pypdf, Tesseract (pytesseract), fpdf |
 | AI / RAG | Groq (`openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, `openai/gpt-oss-20b`), OpenRouter fallback, LangChain, ChromaDB, all-MiniLM-L6-v2 embeddings (ONNX, no torch needed) |
@@ -117,12 +135,13 @@
 ```text
 .
 ├── my-app/                         # Next.js frontend + API routes (deployed to Vercel)
-│   ├── public/                     # feature card images
+│   ├── public/                     # feature card images, Planly icons, manifest.webmanifest, sw.js
 │   └── src/
 │       ├── app/
 │       │   ├── home/               # landing page
 │       │   ├── EmailSummarizer/    # Outlook inbox + AI panel
 │       │   ├── pdfNotesExtractor/  # PDF upload → study viewer
+│       │   ├── planly/             # Planly dashboard: PlanlyApp.tsx, components/, lib/ (store, timers, sounds, utils)
 │       │   ├── quizgenerator/      # quiz creation, quiz page, results
 │       │   │   ├── [id]/           # take a quiz
 │       │   │   ├── arena/[pin]/    # live quiz (host + player views)
@@ -134,6 +153,7 @@
 │       │       ├── email/          # summarize, draft, events
 │       │       ├── quiz/           # generate, getquiz, selectoption
 │       │       ├── livequiz/       # create, history, [pin]/state|stream|action, engine.ts
+│       │       ├── planly/         # ai-tasks (goal → tasks via Groq)
 │       │       ├── uploadpdf/      # PDF upload + document lookup
 │       │       ├── lib/            # Mongoose models: Quiz, Document, LiveGame
 │       │       └── utils/          # db, s3, ai (Groq), upload validation
@@ -293,6 +313,7 @@ The PDF upload and quiz routes are allowed to run for up to 300 seconds (`maxDur
 | GET | `/api/livequiz/[pin]/stream` | Server-sent events for live updates |
 | POST | `/api/livequiz/[pin]/action` | `JOIN`, `SUBMIT_ANSWER`, and host-only actions: `START_GAME`, `END_QUESTION`, `SHOW_LEADERBOARD`, `NEXT_QUESTION`, `UPDATE_QUESTIONS` |
 | GET | `/api/livequiz/history` | The 30 most recent finished games |
+| POST | `/api/planly/ai-tasks` | `{ goal, count, today, assignment? }` → suggested tasks with difficulty, tags and due dates |
 
 ### Flask backend (`python-app`)
 

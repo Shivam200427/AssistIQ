@@ -118,6 +118,12 @@ const Navbar = () => {
             )}
           </div>
         ))}
+        <div
+          onClick={() => router.push("/planly")}
+          className="relative cursor-pointer uppercase tracking-wider transition-colors py-1 text-gray-400 hover:text-white"
+        >
+          planly
+        </div>
       </div>
 
       {/* Auth Action Button: Simple "Connect" */}

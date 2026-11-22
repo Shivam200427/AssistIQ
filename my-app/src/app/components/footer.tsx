@@ -24,7 +24,7 @@ const Footer = () => {
             </div>
             <p className="text-gray-400 leading-relaxed text-xs sm:text-sm">
               Street-smart AI built for high-performance students. 
-              Zero fluff. Only the 3 mission-critical academic tools: Email Summarizer, PDF Notes Extractor, and Quiz Generator.
+              Zero fluff. Only the 4 mission-critical academic tools: Email Summarizer, PDF Notes Extractor, Quiz Generator and Planly.
             </p>
             <div className="mt-4 flex items-center gap-2">
               <span className="font-tag text-xs text-[#38bdf8] bg-[#0ea5e9]/15 px-3 py-1 rounded-full border border-[#0ea5e9]/30 uppercase">
@@ -43,6 +43,7 @@ const Footer = () => {
                 { href: "/EmailSummarizer", text: "Email Summarizer", tag: "INBOX SNIPER" },
                 { href: "/pdfNotesExtractor", text: "PDF Notes Extractor", tag: "DOC WILDSTYLE" },
                 { href: "/quizgenerator", text: "Quiz Generator", tag: "QUIZ ARENA" },
+                { href: "/planly", text: "Planly", tag: "PLAN HQ" },
               ].map((link, i) => (
                 <a
                   key={i}

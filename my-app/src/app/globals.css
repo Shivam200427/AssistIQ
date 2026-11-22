@@ -165,3 +165,26 @@ body {
   background: #0ea5e9;
   color: #070a12;
 }
+
+/* Planly notes editor (TipTap) */
+.planly-prose { color: var(--pl-text); font-size: 0.95rem; line-height: 1.7; }
+.planly-prose > * + * { margin-top: 0.6em; }
+.planly-prose h1 { font-size: 1.7rem; font-weight: 800; line-height: 1.25; margin-top: 0.8em; }
+.planly-prose h2 { font-size: 1.35rem; font-weight: 800; line-height: 1.3; margin-top: 0.8em; }
+.planly-prose h3 { font-size: 1.1rem; font-weight: 700; margin-top: 0.7em; }
+.planly-prose ul { list-style: disc; padding-left: 1.4em; }
+.planly-prose ol { list-style: decimal; padding-left: 1.4em; }
+.planly-prose li > p { margin: 0; }
+.planly-prose ul[data-type="taskList"] { list-style: none; padding-left: 0.2em; }
+.planly-prose ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; }
+.planly-prose ul[data-type="taskList"] li > label { margin-top: 0.3em; user-select: none; }
+.planly-prose ul[data-type="taskList"] li > label input { accent-color: var(--pl-accent); width: 1em; height: 1em; cursor: pointer; }
+.planly-prose ul[data-type="taskList"] li > div { flex: 1; }
+.planly-prose ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--pl-muted); text-decoration: line-through; }
+.planly-prose blockquote { border-left: 3px solid var(--pl-accent); padding-left: 0.9em; color: var(--pl-muted); }
+.planly-prose code { background: var(--pl-card2); border: 1px solid var(--pl-border); border-radius: 0.35em; padding: 0.1em 0.35em; font-size: 0.85em; }
+.planly-prose pre { background: var(--pl-card2); border: 1px solid var(--pl-border); border-radius: 0.75em; padding: 0.8em 1em; overflow-x: auto; }
+.planly-prose pre code { background: none; border: 0; padding: 0; }
+.planly-prose hr { border: 0; border-top: 1px solid var(--pl-border); margin: 1.2em 0; }
+.planly-prose a { color: var(--pl-accent); text-decoration: underline; }
+.planly-prose p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--pl-muted); float: left; height: 0; pointer-events: none; }
