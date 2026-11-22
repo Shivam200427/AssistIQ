@@ -120,7 +120,14 @@ def retrieve(store, query, k=5):
     ]
 
 
-_CITE_RE = re.compile(r"\[(?:p|pp|page|pages)\.?\s*([0-9][0-9,\s\-–]*)\]", re.IGNORECASE)
+# Accepts [p. 3], [pp. 2, 4], (p. 3), (page 3)
+_CITE_RE = re.compile(r"[\[(](?:p|pp|page|pages)\.?\s*([0-9][0-9,\s\-–]*)[\])]", re.IGNORECASE)
+# The model sometimes says "the excerpts don't say" but still attaches a citation; that is not an answer.
+_NO_INFO_RE = re.compile(
+    r"\b(do(es)? not (contain|mention|include|provide|specify|state)|no (information|mention|details?)|not (mentioned|provided|specified|stated|available|found)"
+    r"|(isn't|is not|aren't|are not) (mentioned|provided|specified|stated|listed))\b",
+    re.IGNORECASE,
+)
 
 
 def extract_cited_pages(answer):
@@ -182,14 +189,51 @@ def build_context(store, question, hits, max_chars=12000):
     return sorted(picked, key=lambda r: r["page"])
 
 
+_FILLER = set(
+    "answer answers based shown show shows listed lists list mentioned mentions mention mentioning states stated state "
+    "according document documents provided provide excerpt excerpts text page pages information info detail details "
+    "includes include including included contain contains containing named name called also following given person "
+    "their there they them this that these those which while with within would could should about from into have "
+    "being been were where when what does done made make makes using used uses currently located location "
+    "contact header section resume profile alongside noted shown appears appear appearing presented details listed "
+    "student candidate applicant individual mentioned address number email phone mobile website link "
+    "either served completed currently overall".split()
+)
+
+
+def _content_words(text):
+    text = re.sub(r"\[(?:p|pp|page|pages)\.?\s*[0-9,\s\-–]*\]", " ", text or "", flags=re.IGNORECASE)
+    words = re.findall(r"[a-z][a-z0-9+#.\-]{3,}|\d{2,}", text.lower())
+    return [w.strip(".-") for w in words if w.strip(".-") not in _STOP and w.strip(".-") not in _FILLER]
+
+
+def support_ratio(answer, context, question=""):
+    """Share of the answer's factual words that appear in the pages it was answered from.
+    Words from the question itself and filler words are ignored. A made-up answer (e.g. "France won the
+    World Cup" for a CV) scores near 0; a faithful answer or paraphrase scores high."""
+    source = " ".join(c["text"] for c in context).lower()
+    asked = set(_content_words(question))
+    words = [w for w in _content_words(answer) if w not in asked]
+    if not words:
+        return 1.0
+    found = sum(1 for w in words if (w[:5] if len(w) > 5 else w) in source)
+    return found / len(words)
+
+
+MIN_SUPPORT = float(os.getenv("RAG_MIN_SUPPORT", "0.45"))
+
+
 def answer_with_citations(question, hits, llm=prompt_completion, store=None):
     """Answers strictly from the document or abstains. Never returns an unverifiable citation.
-    - Relevance gate: if even the best passage is unrelated to the question, abstain without asking the model.
-      (Whole-document requests such as "summarize this" are exempt; they match no single passage.)
-    - The model must cite pages it was shown; otherwise the answer is refused."""
+    - The model sees the whole document when it is small, otherwise the best passages plus keyword matches.
+      (Similarity scores can't tell a short real question like "location?" from an off-topic one, so they
+      only decide what to show the model, not whether to answer.)
+    - The answer must cite pages it was shown, and its factual words must actually appear on those pages;
+      otherwise the chat abstains."""
     summary = is_summary_request(question)
     best = max((h["score"] for h in hits), default=0.0)
-    if not summary and best < MIN_RELEVANCE:
+    if store is None and not summary and best < MIN_RELEVANCE:
+        # Without the full document we only have the retrieved passages; if none relate, don't guess.
         return abstain("no_relevant_passages", hits)
 
     context = build_context(store, question, hits)
@@ -218,15 +262,31 @@ Question: {question}
 {task}"""
     answer = (llm(prompt, temperature=0.1) or "").strip()
 
-    if not answer or NOT_ENOUGH in answer:
+    if not answer or NOT_ENOUGH in answer or (_NO_INFO_RE.search(answer) and len(_CITE_RE.findall(answer)) <= 1 and len(answer) < 300):
         return abstain("model_reported_insufficient_evidence", hits)
     cited = extract_cited_pages(answer)
     allowed = {c["page"] for c in context}
+    if not cited and NOT_ENOUGH not in answer:
+        # Ask once more, firmly, for page citations.
+        retry = (llm(prompt + "\n\nIMPORTANT: end every sentence or bullet with its page citation, like [p. 1].", temperature=0.1) or "").strip()
+        if retry and NOT_ENOUGH not in retry:
+            answer = retry
+            cited = extract_cited_pages(answer)
+    pages_shown = {c["page"] for c in context}
+    if not cited and len(pages_shown) == 1 and support_ratio(answer, context, question) >= 0.7:
+        # The model was shown only one page and the answer's facts are on it: that page is the source.
+        page = next(iter(pages_shown))
+        answer = f"{answer} [p. {page}]"
+        cited = {page}
     if not cited:
         return abstain("answer_had_no_citations", hits)
     if not cited.issubset(allowed):
         # A citation to a page we never showed the model is invented — refuse rather than mislead.
         return abstain("answer_cited_unretrieved_pages", hits)
+    cited_context = [c for c in context if c["page"] in cited]
+    if support_ratio(answer, cited_context, question) < MIN_SUPPORT:
+        # The answer's facts aren't on the pages it cites — likely outside knowledge. Refuse.
+        return abstain("answer_not_supported_by_cited_pages", hits)
 
     citations = []
     for page in sorted(cited):

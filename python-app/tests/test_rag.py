@@ -145,6 +145,9 @@ def test_chat_route_cites_and_abstains(store_dir, monkeypatch):
     assert res.status_code == 200 and body["grounded"] is True
     assert body["citations"][0]["page"] == 3
 
+    # An off-topic question where the model makes something up and cites a page: refused.
+    stub = StubLLM("Paris is the capital of France [p. 1].")
+    monkeypatch.setattr(rag.answer_with_citations, "__defaults__", (stub, None))
     res = client.post("/askquestion", json={"question": "What is the capital of France?", "store": store_dir})
     body = res.get_json()
     assert body["grounded"] is False and body["citations"] == []
@@ -225,11 +228,53 @@ def test_summary_request_uses_the_whole_document(cv_store):
     assert "bullet points" in llm.prompts[0]
 
 
-def test_off_topic_question_on_a_cv_still_abstains_without_the_model(cv_store):
+def test_off_topic_question_with_a_made_up_answer_is_refused(cv_store):
+    """Even if the model answers from outside knowledge and cites a page, the facts aren't on that page."""
     q = "Who won the 2018 FIFA World Cup?"
-    llm = StubLLM("France [p. 1].")
+    llm = StubLLM("France won the 2018 FIFA World Cup [p. 1].")
     result = rag.answer_with_citations(q, rag.retrieve(cv_store, q, k=6), llm=llm, store=cv_store)
-    assert result["grounded"] is False and result["citations"] == [] and llm.calls == 0
+    assert result["grounded"] is False and result["citations"] == []
+    assert result["reason"] == "answer_not_supported_by_cited_pages"
+
+
+def test_off_topic_question_when_the_model_reports_no_evidence(cv_store):
+    q = "What is the capital of France?"
+    result = rag.answer_with_citations(q, rag.retrieve(cv_store, q, k=6), llm=StubLLM(rag.NOT_ENOUGH), store=cv_store)
+    assert result["grounded"] is False and result["citations"] == []
+
+
+def test_short_questions_get_answers(cv_store):
+    """'location?' and 'name?' barely resemble any passage mathematically; they used to be refused."""
+    for q, reply in [("location?", "He is based in Greater Noida, India [p. 1]."), ("name?", "The name is Shivam Jain [p. 1].")]:
+        llm = StubLLM(reply)
+        result = rag.answer_with_citations(q, rag.retrieve(cv_store, q, k=6), llm=llm, store=cv_store)
+        assert result["grounded"] is True, q
+        assert llm.calls == 1 and "Greater Noida" in llm.prompts[0]  # the model saw the whole short document
+
+
+def test_a_cited_no_information_reply_is_an_abstention(cv_store):
+    q = "What is his salary expectation?"
+    llm = StubLLM("The provided excerpts do not contain any information regarding salary expectations [p. 1].")
+    result = rag.answer_with_citations(q, rag.retrieve(cv_store, q, k=6), llm=llm, store=cv_store)
+    assert result["grounded"] is False and result["reason"] == "model_reported_insufficient_evidence"
+
+
+def test_missing_citation_is_recovered_only_when_safe(cv_store):
+    q = "summarize this document"
+    # Model forgets the tags twice; one-page document + well-supported facts -> attributed to page 1.
+    llm = StubLLM("Computer Science student at Bennett University who built Clinical Pilot.")
+    result = rag.answer_with_citations(q, rag.retrieve(cv_store, q, k=6), llm=llm, store=cv_store)
+    assert result["grounded"] is True and [c["page"] for c in result["citations"]] == [1]
+    assert llm.calls == 2  # it was asked once more for citations first
+    # Uncited and unsupported -> still refused.
+    bad = rag.answer_with_citations(q, rag.retrieve(cv_store, q, k=6), llm=StubLLM("He is a famous football player in Spain."), store=cv_store)
+    assert bad["grounded"] is False
+
+
+def test_support_ratio():
+    ctx = [{"page": 1, "text": "Shivam Jain, Greater Noida, India. Python, C++. Clinical Pilot project."}]
+    assert rag.support_ratio("He lives in Greater Noida, India [p. 1].", ctx, "location?") >= 0.7  # "lives" is a paraphrase
+    assert rag.support_ratio("France won the World Cup [p. 1].", ctx, "who won?") == 0.0
 
 
 def test_summary_requests_are_recognised():
