@@ -139,7 +139,7 @@ def test_chat_route_cites_and_abstains(store_dir, monkeypatch):
 
     monkeypatch.setattr(rag, "prompt_completion", StubLLM("Glycolysis occurs in the cytoplasm [p. 3]."))
     # answer_with_citations captured the default at import time; route passes none, so patch the default too.
-    monkeypatch.setattr(rag.answer_with_citations, "__defaults__", (rag.prompt_completion,))
+    monkeypatch.setattr(rag.answer_with_citations, "__defaults__", (rag.prompt_completion, None))
     res = client.post("/askquestion", json={"question": "Where does glycolysis happen?", "store": store_dir})
     body = res.get_json()
     assert res.status_code == 200 and body["grounded"] is True
@@ -183,3 +183,57 @@ def test_document_quiz_refuses_to_run_without_document_text(monkeypatch):
     assert res.status_code == 422
     assert "No readable text" in res.get_json()["message"]
     assert called == []
+
+
+# ---------------------------------------------------------------- regression: CV-style documents
+CV_PAGES = [
+    {"page": 1, "text": "Shivam Jain\nB.Tech Computer Science and Engineering | Software Engineer\nGreater Noida, India"},
+    {"page": 1, "text": "EDUCATION\nBennett University, Greater Noida, India\nSep 2023 - May 2027 (expected)\nB.Tech in Computer Science"},
+    {"page": 1, "text": "PROJECTS\nClinical Pilot - Multi-Agent Clinical Decision Support (team project). Built agents that triage patient notes.\nNudge - a habit app. Code: github.com/example/Nudge"},
+    {"page": 1, "text": "TECHNICAL SKILLS\nLanguages: Python, C++, TypeScript, JavaScript, HTML, CSS"},
+    {"page": 1, "text": "LEADERSHIP AND ACTIVITIES\nManagement Head, NEP SAARTHI (2025-2026).\nVolunteer, KARTAVYA."},
+]
+
+
+@pytest.fixture()
+def cv_store(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    rag._store_cache.clear()
+    d = f"./vectorstores/{uuid.uuid4()}"
+    # Each entry is its own chunk; join them as one page like a real one-page CV.
+    rag.build_page_index([{"page": 1, "text": "\n\n".join(p["text"] for p in CV_PAGES)}], d)
+    store, _ = rag.open_store(d)
+    return store
+
+
+def test_relevant_section_below_the_cutoff_still_reaches_the_model(cv_store):
+    """The PROJECTS section scored under the relevance cut-off and used to be dropped, so the chat refused."""
+    q = "What projects has he worked on?"
+    llm = StubLLM("He built Clinical Pilot, a multi-agent clinical decision support system [p. 1].")
+    result = rag.answer_with_citations(q, rag.retrieve(cv_store, q, k=6), llm=llm, store=cv_store)
+    assert "PROJECTS" in llm.prompts[0] and "Clinical Pilot" in llm.prompts[0]
+    assert result["grounded"] is True and [c["page"] for c in result["citations"]] == [1]
+
+
+def test_summary_request_uses_the_whole_document(cv_store):
+    q = "summarize this document"
+    llm = StubLLM("- Computer science student at Bennett University [p. 1]\n- Built Clinical Pilot [p. 1]")
+    result = rag.answer_with_citations(q, rag.retrieve(cv_store, q, k=6), llm=llm, store=cv_store)
+    assert result["grounded"] is True
+    for section in ("EDUCATION", "PROJECTS", "TECHNICAL SKILLS", "LEADERSHIP"):
+        assert section in llm.prompts[0]
+    assert "bullet points" in llm.prompts[0]
+
+
+def test_off_topic_question_on_a_cv_still_abstains_without_the_model(cv_store):
+    q = "Who won the 2018 FIFA World Cup?"
+    llm = StubLLM("France [p. 1].")
+    result = rag.answer_with_citations(q, rag.retrieve(cv_store, q, k=6), llm=llm, store=cv_store)
+    assert result["grounded"] is False and result["citations"] == [] and llm.calls == 0
+
+
+def test_summary_requests_are_recognised():
+    for q in ["summarize this document", "Give me an overview", "What is this PDF about?", "key points please", "tl;dr"]:
+        assert rag.is_summary_request(q), q
+    for q in ["What projects has he worked on?", "Where does glycolysis happen?"]:
+        assert not rag.is_summary_request(q), q

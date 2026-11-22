@@ -1,7 +1,7 @@
 import axios from "axios";
 import { randomBytes, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { createSessionToken, setSessionCookie, uidFromGraphProfile } from "../../utils/session";
+import { createSessionToken, identityFromIdToken, setSessionCookie, uidFromGraphProfile } from "../../utils/session";
 
 const client_id = process.env.MICROSOFT_CLIENT_ID!;
 const client_secret = process.env.MICROSOFT_CLIENT_SECRET!;
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
 
-    const { access_token, refresh_token, expires_in } = tokenResponse.data;
+    const { access_token, refresh_token, expires_in, id_token } = tokenResponse.data;
 
     const destination = new URL(safeRedirectPath(expected.redirectPath || null), url.origin);
     const res = NextResponse.redirect(destination);
@@ -109,19 +109,23 @@ export async function GET(req: NextRequest) {
     });
     res.cookies.set(STATE_COOKIE, "", { maxAge: 0, path: "/api/auth" });
 
-    // Student identity: the Microsoft account id, kept in a signed session cookie.
+    // Student identity: the Microsoft account id (oid), kept in a signed session cookie.
+    // Read from the ID token first — it needs no extra Graph permission. Graph /me is only a fallback
+    // (it requires User.Read, which this app's token may not have).
     try {
-      const me = await axios.get("https://graph.microsoft.com/v1.0/me", {
-        headers: { Authorization: `Bearer ${access_token}` },
-        timeout: 8000,
-      });
-      const uid = uidFromGraphProfile(me.data);
-      if (uid) {
-        setSessionCookie(
-          res,
-          createSessionToken({ uid, name: me.data.displayName, email: me.data.mail || me.data.userPrincipalName }),
-          secureCookies
-        );
+      let identity = identityFromIdToken(id_token, client_id);
+      if (!identity) {
+        const me = await axios.get("https://graph.microsoft.com/v1.0/me", {
+          headers: { Authorization: `Bearer ${access_token}` },
+          timeout: 8000,
+        });
+        const uid = uidFromGraphProfile(me.data);
+        if (uid) identity = { uid, name: me.data.displayName || "", email: me.data.mail || me.data.userPrincipalName || "" };
+      }
+      if (identity) {
+        setSessionCookie(res, createSessionToken(identity), secureCookies);
+      } else {
+        console.error("Could not create student session: no identity in the sign-in response");
       }
     } catch (e: any) {
       console.error("Could not create student session:", e?.message);

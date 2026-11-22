@@ -141,19 +141,72 @@ def abstain(reason, hits=None):
     return {"answer": ABSTAIN_MESSAGE, "grounded": False, "citations": [], "reason": reason, "pages_searched": sorted({h["page"] for h in hits or []})}
 
 
-def answer_with_citations(question, hits, llm=prompt_completion):
-    """Answers strictly from `hits` (page-tagged excerpts) or abstains. Never returns an unverifiable citation."""
-    relevant = [h for h in hits if h["score"] >= MIN_RELEVANCE]
-    if not relevant:
+SUMMARY_RE = re.compile(
+    r"\b(summar\w*|overview|tl;?dr|main (points|ideas)|key (points|ideas|takeaways)|gist|outline"
+    r"|what('s| is) (this|the) (pdf|document|doc|file|paper|text) about|explain (this|the) (pdf|document|doc|file))\b",
+    re.IGNORECASE,
+)
+_STOP = set("what which who whom whose when where why how does did have has with from this that these those about into "
+            "there their they them then than your yours were been being also just only some many much more most such "
+            "tell list give show explain describe document pdf file page pages please".split())
+
+
+def is_summary_request(question):
+    return bool(SUMMARY_RE.search(question or ""))
+
+
+def _keywords(question):
+    return {w for w in re.findall(r"[a-z0-9+#]{4,}", (question or "").lower()) if w not in _STOP}
+
+
+def build_context(store, question, hits, max_chars=12000):
+    """Passages the model may answer from. Small documents are given in full; for larger ones the
+    top retrieved passages are joined by any passage that literally contains the question's key words
+    (similarity alone can rank a relevant section, e.g. a CV's "PROJECTS", just below the cut-off)."""
+    if store is None:
+        return sorted(hits, key=lambda h: h["page"])
+    rows = all_chunks_in_page_order(store)
+    if sum(len(r["text"]) for r in rows) <= max_chars:
+        return rows
+    words = _keywords(question)
+    picked, seen, used = [], set(), 0
+    candidates = [{"page": h["page"], "text": h["text"]} for h in hits]
+    candidates += [r for r in rows if words and any(w in r["text"].lower() for w in words)]
+    for r in candidates:
+        key = (r["page"], r["text"][:80])
+        if key in seen or used + len(r["text"]) > max_chars:
+            continue
+        seen.add(key)
+        picked.append(r)
+        used += len(r["text"])
+    return sorted(picked, key=lambda r: r["page"])
+
+
+def answer_with_citations(question, hits, llm=prompt_completion, store=None):
+    """Answers strictly from the document or abstains. Never returns an unverifiable citation.
+    - Relevance gate: if even the best passage is unrelated to the question, abstain without asking the model.
+      (Whole-document requests such as "summarize this" are exempt; they match no single passage.)
+    - The model must cite pages it was shown; otherwise the answer is refused."""
+    summary = is_summary_request(question)
+    best = max((h["score"] for h in hits), default=0.0)
+    if not summary and best < MIN_RELEVANCE:
         return abstain("no_relevant_passages", hits)
 
-    excerpts = "\n\n".join(f"[p. {h['page']}]\n{h['text']}" for h in relevant)
+    context = build_context(store, question, hits)
+    if not context:
+        return abstain("no_relevant_passages", hits)
+    excerpts = "\n\n".join(f"[p. {c['page']}]\n{c['text']}" for c in context)
+    task = (
+        "Summarize the document in 4-8 bullet points covering its main points."
+        if summary
+        else "Answer the question in 2-5 sentences."
+    )
     prompt = f"""You answer questions about a student's PDF using ONLY the excerpts below.
 Each excerpt starts with its page number like [p. 3].
 
 Rules:
 - Use only facts stated in the excerpts. Do not use outside knowledge.
-- After every sentence that states a fact, cite the page(s) it came from, exactly like [p. 3] or [p. 3, 5].
+- After every sentence or bullet that states a fact, cite the page(s) it came from, exactly like [p. 3] or [p. 3, 5].
 - Only cite page numbers that appear in the excerpts below.
 - If the excerpts do not contain enough information to answer, reply with exactly: {NOT_ENOUGH}
 
@@ -162,22 +215,22 @@ Excerpts:
 
 Question: {question}
 
-Answer (2-5 sentences, with citations):"""
+{task}"""
     answer = (llm(prompt, temperature=0.1) or "").strip()
 
     if not answer or NOT_ENOUGH in answer:
-        return abstain("model_reported_insufficient_evidence", relevant)
+        return abstain("model_reported_insufficient_evidence", hits)
     cited = extract_cited_pages(answer)
-    allowed = {h["page"] for h in relevant}
+    allowed = {c["page"] for c in context}
     if not cited:
-        return abstain("answer_had_no_citations", relevant)
+        return abstain("answer_had_no_citations", hits)
     if not cited.issubset(allowed):
         # A citation to a page we never showed the model is invented — refuse rather than mislead.
-        return abstain("answer_cited_unretrieved_pages", relevant)
+        return abstain("answer_cited_unretrieved_pages", hits)
 
     citations = []
     for page in sorted(cited):
-        excerpt = next(h["text"] for h in relevant if h["page"] == page)
+        excerpt = next(c["text"] for c in context if c["page"] == page)
         citations.append({"page": page, "excerpt": excerpt[:280]})
     return {"answer": answer, "grounded": True, "citations": citations, "reason": None, "pages_searched": sorted(allowed)}
 

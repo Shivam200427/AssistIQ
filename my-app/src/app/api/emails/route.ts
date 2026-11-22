@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
+import { getSession } from "../utils/session";
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -28,17 +29,21 @@ export async function GET(req: NextRequest) {
   try {
     let rawMessages: any[] = [];
 
-    // 1. Identify connected account
-    let userIdentifier = "Unknown User";
-    try {
-      const meRes = await axios.get("https://graph.microsoft.com/v1.0/me", {
-        headers: { Authorization: `Bearer ${access_token}` },
-        timeout: 5000,
-      });
-      userIdentifier = meRes.data?.mail || meRes.data?.userPrincipalName || meRes.data?.displayName || "Connected User";
-    } catch (meErr: any) {
-      console.log("[Microsoft Graph] /me check notice:", meErr?.response?.status, meErr.message);
+    // 1. Identify connected account — from the signed session (no Graph permission needed),
+    //    falling back to Graph /me only when there is no session.
+    let userIdentifier = getSession(req)?.email || "";
+    if (!userIdentifier) {
+      try {
+        const meRes = await axios.get("https://graph.microsoft.com/v1.0/me", {
+          headers: { Authorization: `Bearer ${access_token}` },
+          timeout: 5000,
+        });
+        userIdentifier = meRes.data?.mail || meRes.data?.userPrincipalName || meRes.data?.displayName || "";
+      } catch {
+        // Not allowed without User.Read; the inbox still loads.
+      }
     }
+    userIdentifier = userIdentifier || "Connected account";
 
     // 3. Strategy A: Primary Inbox Messages (newest first)
     try {

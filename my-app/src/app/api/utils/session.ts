@@ -78,6 +78,37 @@ export function clearSessionCookie(res: NextResponse) {
   res.cookies.set(SESSION_COOKIE, "", { maxAge: 0, path: "/", httpOnly: true, sameSite: "lax" });
 }
 
+/**
+ * Reads the student's identity from the ID token returned by Microsoft's token endpoint.
+ * The token is received directly from Microsoft over TLS (server-to-server), so it isn't user-supplied;
+ * we still check it was issued for this app and hasn't expired. Needs no Graph permission
+ * (unlike /me, which requires User.Read).
+ */
+export function identityFromIdToken(
+  idToken: string | undefined | null,
+  clientId: string,
+  now = Date.now()
+): { uid: string; name: string; email: string } | null {
+  if (!idToken || typeof idToken !== "string") return null;
+  const parts = idToken.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    if (!claims || claims.aud !== clientId) return null;
+    if (typeof claims.exp !== "number" || claims.exp * 1000 < now - 5 * 60 * 1000) return null;
+    if (typeof claims.iss !== "string" || !/^https:\/\/login\.microsoftonline\.com\//.test(claims.iss)) return null;
+    const oid = typeof claims.oid === "string" ? claims.oid.trim() : "";
+    if (!oid) return null;
+    return {
+      uid: `ms:${oid}`, // same value as Graph /me "id"
+      name: String(claims.name || ""),
+      email: String(claims.email || claims.preferred_username || ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Builds the stable user id from a Microsoft Graph /me response. */
 export function uidFromGraphProfile(profile: any): string | null {
   const id = typeof profile?.id === "string" ? profile.id.trim() : "";

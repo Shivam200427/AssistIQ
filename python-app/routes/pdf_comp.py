@@ -40,7 +40,7 @@ def ask_question():
                 result = abstain("legacy_index")
                 result["answer"] = LEGACY_MESSAGE
                 return jsonify(result), 200
-            return jsonify(answer_with_citations(question, retrieve(store, question, k=5))), 200
+            return jsonify(answer_with_citations(question, retrieve(store, question, k=6), store=store)), 200
 
         hits = retrieve(store, question, k=8) if cited else [
             {"page": 0, "text": d.page_content, "score": 1.0} for d in store.similarity_search(question, k=8)

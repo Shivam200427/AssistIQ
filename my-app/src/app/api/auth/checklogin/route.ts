@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const session = getSession(req);
   if (session) {
-    return NextResponse.json({ Authorized: true, user: { name: session.name, email: session.email } }, { status: 200 });
+    return NextResponse.json({ Authorized: true, session: true, user: { name: session.name, email: session.email } }, { status: 200 });
   }
 
   const ms_token = req.cookies.get("ms_tokens")?.value;
@@ -33,7 +33,9 @@ export async function GET(req: NextRequest) {
     setSessionCookie(res, createSessionToken({ uid, name, email }), (process.env.CALLBACK_URL || "").startsWith("https://"));
     return res;
   } catch {
-    // Expired or invalid Microsoft token: treat as signed out.
-    return NextResponse.json({ Authorized: false }, { status: 401 });
+    // Outlook is connected but no student session could be made from this token (e.g. no User.Read).
+    // Report it as connected; pages that need a session send the student through sign-in once,
+    // which creates the session from the ID token.
+    return NextResponse.json({ Authorized: true, session: false }, { status: 200 });
   }
 }
