@@ -1,167 +1,354 @@
 # AssistIQ
 
-AssistIQ is an AI study assistant. It summarizes your Outlook email, turns PDFs into structured notes you can chat with, and generates quizzes you can take alone or play live with a class.
+**AssistIQ is an AI study assistant.** It summarizes your Outlook inbox, turns any PDF into structured notes you can chat with, and generates quizzes you can take on your own or play live with a whole class.
 
-**Live app:** https://assistiq-two.vercel.app
+| | Link |
+|---|---|
+| 🌐 **App** | https://assistiq-two.vercel.app |
+| ⚙️ **Backend health check** | https://assistiq-backend-idbq.onrender.com/health |
+| 📦 **Repository** | https://github.com/Shivam200427/AssistIQ |
+
+> The backend runs on Render's free plan and sleeps after 15 minutes without traffic. The first PDF action after a break can take about a minute while it wakes up. After that, responses are fast.
+
+---
+
+## Contents
+
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Tech stack](#tech-stack)
+- [Project structure](#project-structure)
+- [Running locally](#running-locally)
+- [Environment variables](#environment-variables)
+- [Deployment](#deployment)
+- [API reference](#api-reference)
+- [Security](#security)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+
+---
 
 ## Features
 
-| Feature | What it does |
-|---|---|
-| **Email Summarizer** | Connects to Outlook (Microsoft Graph), then summarizes each email, drafts a reply and pulls out dates and deadlines. Includes a demo inbox for trying it without signing in. |
-| **PDF Notes Extractor** | Upload a PDF (typed or scanned) and get clean study notes as a new PDF, plus a study panel with: chat with the PDF (RAG), short notes, project ideas, quiz topics and a concept map. |
-| **Quiz Generator** | Creates multiple-choice quizzes from a topic or an uploaded PDF, scores your answers and explains each one. |
-| **Live Quiz Arena** | Host any quiz as a live game: players join with a 6-digit PIN or QR code, answer against the clock and see a live leaderboard. |
+### 📧 Email Summarizer — `/EmailSummarizer`
+- Sign in with a Microsoft / Outlook account. The app reads your 50 most recent emails through Microsoft Graph.
+- For the selected email, AssistIQ gives you:
+  - a **bullet-point summary**: the purpose, key details and any action needed
+  - a **suggested reply**, which you can edit and copy
+  - the **dates, deadlines and meetings** mentioned in it
+- Filter the inbox by keywords.
+- **Demo inbox:** try every feature without signing in.
 
-## Architecture
+### 📄 PDF Notes Extractor — `/pdfNotesExtractor`
+- Upload a typed or scanned PDF of up to 25 MB. Scanned pages are read with Tesseract OCR.
+- AssistIQ writes **long-form study notes** and opens them as a new PDF next to a study panel:
+  - **Chat with PDF:** ask questions and get answers grounded in the document (RAG)
+  - **Short notes:** a quick bullet digest
+  - **Project ideas:** practical projects based on the content
+  - **Quiz topics:** one click turns a topic into a quiz
+  - **Concept map:** an interactive graph of the key ideas and how they relate
+
+### 📝 Quiz Generator — `/quizgenerator`
+- Creates multiple-choice questions from a **topic** or from an **uploaded PDF**. PDF quizzes only use what's in the document.
+- Pick your answers, submit, and see your score with an explanation for each question.
+
+### 🎮 Live Quiz Arena — `/quizgenerator/arena/[pin]`
+- **Host:** click **Host Live Arena** on the quiz generator, or on any generated quiz. You get a 6-digit PIN and a QR code. In the lobby you can add, edit or delete questions, then start the game and move through the questions.
+- **Players:** open `/quizgenerator/join` and enter the PIN and a nickname.
+- **Scoring:** a correct answer earns 50–100% of the question's points depending on speed, plus a streak bonus.
+- **Live leaderboard:** shows the answer split for each question, then a final podium. The host can export results as CSV and view past games.
+
+---
+
+## How it works
 
 ```text
-Browser
-  │
-  ├── Next.js app (my-app, on Vercel)
-  │     ├── pages and UI
-  │     ├── API routes: auth, email, quiz, live quiz, PDF upload
-  │     ├── MongoDB: quizzes, documents, live games
-  │     ├── AWS S3: uploaded PDFs
-  │     └── Groq: email summaries/drafts and topic quizzes
-  │
-  └── Flask backend (python-app, on Render)
-        ├── PDF text extraction (PyMuPDF, Tesseract OCR for scanned pages)
-        ├── notes generation and PDF export
-        ├── ChromaDB vector stores (ONNX all-MiniLM-L6-v2 embeddings), backed up to S3
-        └── Groq, with OpenRouter as fallback
+                     ┌──────────────────────────────────────────────┐
+  Browser ─────────▶ │  Next.js app  (my-app · Vercel)              │
+     │               │  • pages / UI                                │
+     │               │  • API routes: auth, email, quiz, live quiz, │
+     │               │    PDF upload                                │
+     │               └───────┬───────────┬───────────┬──────────────┘
+     │                       │           │           │
+     │                  MongoDB       AWS S3       Groq LLM
+     │             (quizzes, docs,   (uploaded   (summaries, drafts,
+     │               live games)      PDFs)       topic quizzes)
+     │                       │           ▲
+     │                       ▼           │
+     │               ┌───────────────────┴──────────────────────────┐
+     └─────────────▶ │  Flask backend  (python-app · Render)        │
+       (PDF chat,    │  • PDF text extraction (PyMuPDF + Tesseract) │
+     concept map)    │  • notes generation → PDF → S3               │
+                     │  • ChromaDB vector store per document,       │
+                     │    backed up to S3 as a zip                  │
+                     │  • LLM: Groq, falls back to OpenRouter       │
+                     └──────────────────────────────────────────────┘
 ```
+
+**PDF pipeline:**
+1. The browser uploads the PDF to `/api/uploadpdf`.
+2. The Next.js route checks the file and stores it in S3.
+3. The Flask backend extracts the text and uses OCR on pages without a text layer.
+4. The LLM writes study notes, which are rendered to a new PDF and stored in S3.
+5. The notes are split into chunks and embedded, and the vector store is zipped to S3.
+6. The study panel queries that vector store for chat, short notes, project ideas, quiz topics and the concept map.
+
+**Live quiz:**
+- MongoDB is the single source of truth. Every change is one atomic, conditional update, so games stay consistent across Vercel's serverless instances, and simultaneous answers are never lost or counted twice.
+- Each screen refreshes the game state every 2 seconds. A live push stream (SSE) speeds this up when it's available.
+
+---
+
+## Tech stack
+
+| Layer | Technologies |
+|---|---|
+| Frontend | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 4, Framer Motion, React Flow, react-pdf-viewer, lucide-react |
+| Frontend API | Next.js route handlers, Mongoose, AWS SDK v3, axios |
+| Backend | Flask, gunicorn, PyMuPDF, pypdf, Tesseract (pytesseract), fpdf |
+| AI / RAG | Groq (`openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, `openai/gpt-oss-20b`), OpenRouter fallback, LangChain, ChromaDB, all-MiniLM-L6-v2 embeddings (ONNX, no torch needed) |
+| Data | MongoDB Atlas, AWS S3, optional Redis cache for LLM responses |
+| Hosting | Vercel (frontend), Render with Docker (backend) |
+
+---
 
 ## Project structure
 
 ```text
 .
-├── my-app/                 # Next.js 15 frontend + API routes
-│   └── src/app/
-│       ├── home/           # landing page
-│       ├── EmailSummarizer/
-│       ├── pdfNotesExtractor/
-│       ├── quizgenerator/  # quiz, results, live arena (arena/[pin]) and join page
-│       ├── components/
-│       └── api/            # auth, emails, email/*, quiz/*, livequiz/*, uploadpdf
-├── python-app/             # Flask backend
-│   ├── app.py              # app entry point + /generate_questions, /health
-│   ├── routes/             # email, PDF upload, PDF chat / concept map
-│   ├── Dockerfile          # image used on Render
+├── my-app/                         # Next.js frontend + API routes (deployed to Vercel)
+│   ├── public/                     # feature card images
+│   └── src/
+│       ├── app/
+│       │   ├── home/               # landing page
+│       │   ├── EmailSummarizer/    # Outlook inbox + AI panel
+│       │   ├── pdfNotesExtractor/  # PDF upload → study viewer
+│       │   ├── quizgenerator/      # quiz creation, quiz page, results
+│       │   │   ├── [id]/           # take a quiz
+│       │   │   ├── arena/[pin]/    # live quiz (host + player views)
+│       │   │   └── join/           # join a live quiz with a PIN
+│       │   ├── components/         # navbar, PDF viewer, study tools, etc.
+│       │   └── api/
+│       │       ├── auth/           # Microsoft OAuth: callback, checklogin, logout
+│       │       ├── emails/         # inbox from Microsoft Graph
+│       │       ├── email/          # summarize, draft, events
+│       │       ├── quiz/           # generate, getquiz, selectoption
+│       │       ├── livequiz/       # create, history, [pin]/state|stream|action, engine.ts
+│       │       ├── uploadpdf/      # PDF upload + document lookup
+│       │       ├── lib/            # Mongoose models: Quiz, Document, LiveGame
+│       │       └── utils/          # db, s3, ai (Groq), upload validation
+│       └── types/
+├── python-app/                     # Flask backend (deployed to Render)
+│   ├── app.py                      # app setup, /generate_questions, /health
+│   ├── routes/
+│   │   ├── email.py                # /summarize_email, /draftmail, /getevents
+│   │   ├── uplaod_pdf.py           # /upload_pdf
+│   │   └── pdf_comp.py             # /askquestion, /conceptmap
+│   ├── helpers.py                  # notes → PDF, S3 upload, input validation
+│   ├── utils.py                    # embeddings, vector store, RAG
+│   ├── ocr.py                      # PDF text extraction + OCR
+│   ├── openrouter_client.py        # Groq → OpenRouter LLM client with caching
+│   ├── prompts.py                  # quiz prompt
+│   ├── Dockerfile
 │   └── requirements.txt
-├── render.yaml             # Render Blueprint for the backend
-└── start_assist_iq.bat     # starts both apps locally on Windows
+├── render.yaml                     # Render Blueprint for the backend
+└── start_assist_iq.bat             # starts both apps locally (Windows)
 ```
 
-## Tech stack
-
-- **Frontend:** Next.js 15, React 19, TypeScript, Tailwind CSS 4, Framer Motion, React Flow, react-pdf-viewer
-- **Backend:** Flask, gunicorn, PyMuPDF, Tesseract, LangChain, ChromaDB (ONNX embeddings)
-- **AI:** Groq (`openai/gpt-oss-120b` and fallbacks), OpenRouter as a backup
-- **Data:** MongoDB (Mongoose), AWS S3, optional Redis cache
-- **Hosting:** Vercel (frontend), Render (backend)
+---
 
 ## Running locally
 
-### Requirements
+### Prerequisites
 
-- Node.js 18+ and npm
-- Python 3.12
-- A MongoDB connection string
-- An AWS S3 bucket with credentials allowing `PutObject` and `GetObject`
-- A Groq API key (an OpenRouter key is optional, as a fallback)
-- A Microsoft app registration, for the Outlook features only
-- Tesseract, for scanned PDFs only (on Windows: install it, then set `TESSERACT_CMD`)
+- **Node.js 18+** and npm
+- **Python 3.12**
+- A **MongoDB** connection string (for example, a free MongoDB Atlas cluster)
+- An **AWS S3** bucket, plus an access key allowed to `GetObject` and `PutObject` on it
+- A **Groq** API key ([console.groq.com](https://console.groq.com)). An OpenRouter key is an optional fallback.
+- *(Optional)* A **Microsoft Entra app registration**, for the Outlook features
+- *(Optional)* **Tesseract OCR**, for scanned PDFs: [Windows installer](https://github.com/UB-Mannheim/tesseract/wiki), `brew install tesseract`, or `apt install tesseract-ocr`
 
-### 1. Backend
+### 1. Clone
+
+```bash
+git clone https://github.com/Shivam200427/AssistIQ.git
+cd AssistIQ
+```
+
+### 2. Backend
 
 ```bash
 cd python-app
 python -m venv venv
-venv\Scripts\activate          # macOS/Linux: source venv/bin/activate
+venv\Scripts\activate            # macOS / Linux: source venv/bin/activate
 pip install -r requirements.txt
-python app.py                  # http://127.0.0.1:5000
+# create python-app/.env (see below)
+python app.py                    # → http://127.0.0.1:5000/health
 ```
 
-Create `python-app/.env`:
+The first run downloads the embedding model, about 80 MB.
 
-```env
-GROQ_API_KEY=your_groq_key
-OPENROUTER_API_KEY=your_openrouter_key        # optional fallback
-OPENROUTER_MODEL=liquid/lfm-3-1.7b:free       # optional
-
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-AWS_REGION=ap-southeast-2
-AWS_S3_BUCKET=your_bucket
-
-TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe   # only if not on PATH
-CORS_ORIGINS=http://localhost:3000            # optional, defaults to *
-REDIS_URL=redis://localhost:6379/0            # optional cache
-```
-
-### 2. Frontend
+### 3. Frontend
 
 ```bash
 cd my-app
 npm install
-npm run dev                    # http://localhost:3000
+# create my-app/.env (see below)
+npm run dev                      # → http://localhost:3000
 ```
 
-Create `my-app/.env`:
+**Windows shortcut:** `start_assist_iq.bat` starts both apps in separate windows.
 
-```env
-NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:5000
-MONGO_URL=mongodb+srv://...
+---
 
-AWS_REGION=ap-southeast-2
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-AWS_S3_BUCKET=your_bucket
+## Environment variables
 
-Next_GROP_API_KEY=your_groq_key
-GROQ_MODEL=openai/gpt-oss-120b                # optional, tried first
+> Never commit `.env` files. They are excluded by `.gitignore`, `.vercelignore` and `.dockerignore`.
 
-MICROSOFT_CLIENT_ID=...
-MICROSOFT_CLIENT_SECRET=...
-CALLBACK_URL=http://localhost:3000/api/auth/callback
-SCOPES=openid profile email Mail.Read Mail.Send Calendars.Read
-```
+### Frontend: `my-app/.env`
 
-On Windows you can start both apps at once with `start_assist_iq.bat`.
+| Variable | Required | Description |
+|---|---|---|
+| `NEXT_PUBLIC_BACKEND_URL` | ✅ | Flask backend URL: `http://127.0.0.1:5000` locally, your Render URL in production |
+| `MONGO_URL` | ✅ | MongoDB connection string |
+| `AWS_REGION` | ✅ | S3 bucket region, e.g. `ap-southeast-2` |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | ✅ | AWS credentials |
+| `AWS_S3_BUCKET` | ✅ | Bucket name |
+| `Next_GROP_API_KEY` | ✅ | Groq API key (`GROQ_API_KEY` also works) |
+| `GROQ_MODEL` | — | Groq model to try first, before the built-in fallbacks |
+| `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | Outlook only | From your Entra app registration |
+| `CALLBACK_URL` | Outlook only | `http://localhost:3000/api/auth/callback` locally, `https://<your-domain>/api/auth/callback` in production |
+| `SCOPES` | Outlook only | `openid profile email Mail.Read Mail.Send Calendars.Read` |
+
+### Backend: `python-app/.env`
+
+| Variable | Required | Description |
+|---|---|---|
+| `GROQ_API_KEY` | ✅ | Groq API key (main LLM) |
+| `OPENROUTER_API_KEY` | — | Fallback LLM provider |
+| `OPENROUTER_MODEL` | — | OpenRouter model to try first |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | ✅ | AWS credentials |
+| `AWS_REGION` | ✅ | S3 bucket region |
+| `AWS_S3_BUCKET` | ✅ | Same bucket as the frontend |
+| `CORS_ORIGINS` | — | Comma-separated allowed origins, e.g. `https://assistiq-two.vercel.app`. Defaults to `*` |
+| `TESSERACT_CMD` | — | Path to the Tesseract binary, if it isn't on `PATH` |
+| `REDIS_URL` | — | Enables a shared cache for LLM responses |
+| `PORT` | — | Port to listen on. Defaults to `5000`; Render sets this automatically |
+
+---
 
 ## Deployment
 
-### Backend on Render
+### Backend → Render (Docker)
 
-The repo includes a Blueprint ([render.yaml](render.yaml)) that builds [python-app/Dockerfile](python-app/Dockerfile). The image installs Tesseract and pre-downloads the embedding model.
+The repo includes a Render Blueprint, [`render.yaml`](render.yaml), that builds [`python-app/Dockerfile`](python-app/Dockerfile).
 
-1. In Render, choose **New → Blueprint** and select this repository.
-2. When asked, fill in `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`.
-3. When it's live, check `https://<your-service>.onrender.com/health`.
+1. On [dashboard.render.com](https://dashboard.render.com), choose **New → Blueprint** and select this repository.
+2. Enter the secret values when asked: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`.
+   - `CORS_ORIGINS`, `AWS_REGION` and `AWS_S3_BUCKET` are already set in `render.yaml`. Change them if your domain or bucket is different.
+3. Click **Apply**. The first build takes about 5–10 minutes.
+4. Check that `https://<service>.onrender.com/health` returns `{"status": "ok"}`.
 
-The backend uses about 220 MB of memory at rest and about 400 MB while processing a PDF, so it fits the free plan. On the free plan it sleeps after 15 idle minutes, and the first request after that takes about a minute.
+**What the image does:**
+- installs Tesseract
+- pre-downloads the embedding model, so the first request isn't slowed down
+- runs gunicorn with 1 worker and a 300-second timeout
 
-### Frontend on Vercel
+It uses about 220 MB of memory at rest and about 400 MB while processing a PDF, so it fits the **free plan** (512 MB). Pushes to `main` redeploy it automatically.
 
-1. Import `my-app` as a Vercel project, or run `vercel deploy --prod` inside `my-app`.
-2. Add the variables from `my-app/.env` in **Project → Settings → Environment Variables**, with:
+### Frontend → Vercel
+
+1. Import the repo into Vercel and set the **Root Directory** to `my-app`. Or run `vercel deploy --prod` from inside `my-app`.
+2. Under **Settings → Environment Variables**, add every frontend variable listed above, with:
    - `NEXT_PUBLIC_BACKEND_URL` = your Render URL
-   - `CALLBACK_URL` = `https://<your-domain>/api/auth/callback`, also added as a redirect URI in the Microsoft app registration
-3. Redeploy after changing `NEXT_PUBLIC_BACKEND_URL`. It is built into the browser code, so it only takes effect on a new build.
+   - `CALLBACK_URL` = `https://<your-domain>/api/auth/callback`
+3. Add the same callback URL as a **Web redirect URI** in your Microsoft app registration.
+4. **Redeploy** after changing `NEXT_PUBLIC_BACKEND_URL`. It's built into the browser code, so it only takes effect on a new build.
 
-## Security notes
+The PDF upload and quiz routes are allowed to run for up to 300 seconds (`maxDuration`), so they can wait for the backend to process large PDFs.
 
-- **Live quiz:** host actions need a secret host token, which is issued when the game is created. Players can't see correct answers until each question ends. Answer time is measured on the server, and each player can answer each question once. Game state lives in MongoDB, so it stays consistent across serverless instances.
-- **Outlook sign-in:** uses a one-time state check (protects against login CSRF) and only redirects to pages on the same site.
-- **Rendering:** email HTML is shown in a sandboxed iframe, and AI output is rendered as plain text.
-- **Backend input checks:** the backend only reads from the configured S3 bucket, only accepts `pdf/…` file keys and only opens vector stores it created.
-- **Uploads:** must be real PDFs of 25 MB or less.
-- **Secrets:** never commit `.env` files. They are excluded by `.gitignore`, `.vercelignore` and `.dockerignore`.
+---
 
-## Checks
+## API reference
+
+### Next.js API routes (`my-app/src/app/api`)
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/api/auth/callback` | Starts Microsoft sign-in, or completes it when called with `?code=` |
+| GET | `/api/auth/checklogin` | `200` if signed in to Outlook, `401` if not |
+| GET | `/api/auth/logout` | Clears the Outlook session |
+| GET | `/api/emails` | Latest 50 inbox emails from Microsoft Graph |
+| POST | `/api/email/summarize` | Email summary (backend first, then Groq directly) |
+| POST | `/api/email/draft` | Suggested reply (backend first, then Groq directly) |
+| POST | `/api/email/events` | Dates and deadlines in an email (backend) |
+| POST | `/api/quiz/generate` | Create a quiz from `prompt` and an optional `pdf` (multipart form) |
+| POST | `/api/quiz/getquiz` | Load a quiz by `id` |
+| POST | `/api/quiz/selectoption` | Save a chosen answer |
+| POST | `/api/uploadpdf` | Upload a PDF → `{ link, persist }` (notes PDF + vector store id) |
+| GET | `/api/uploadpdf?pdfurl=` | Look up the vector store for a notes PDF |
+| POST | `/api/livequiz/create` | New live game → `{ pin, hostToken }` |
+| GET | `/api/livequiz/[pin]/state` | Current game state (the host gets full data via the `x-host-token` header) |
+| GET | `/api/livequiz/[pin]/stream` | Server-sent events for live updates |
+| POST | `/api/livequiz/[pin]/action` | `JOIN`, `SUBMIT_ANSWER`, and host-only actions: `START_GAME`, `END_QUESTION`, `SHOW_LEADERBOARD`, `NEXT_QUESTION`, `UPDATE_QUESTIONS` |
+| GET | `/api/livequiz/history` | The 30 most recent finished games |
+
+### Flask backend (`python-app`)
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/health` | Status check |
+| POST | `/upload_pdf` | `{ key }` of a PDF in S3 → notes PDF URL + vector store id |
+| POST | `/askquestion` | `{ question, store }` → answer from the document |
+| POST | `/conceptmap` | `{ store }` → `{ nodes, edges }` concept graph |
+| POST | `/generate_questions` | `{ prompt, key? }` → quiz questions |
+| POST | `/summarize_email` | Email summary |
+| POST | `/draftmail` | Suggested reply |
+| POST | `/getevents` | Dates and deadlines in an email |
+
+---
+
+## Security
+
+- **Live quiz integrity:**
+  - Host actions need the secret token that's issued when the game is created.
+  - Players can't see correct answers, or other players' results, until each question ends.
+  - Answer time is measured on the server, and each player can answer each question once.
+- **Outlook sign-in:** a one-time state value protects against login CSRF. Redirects only go to pages on the same site. Tokens are kept in an `httpOnly` cookie.
+- **Protection against malicious content (XSS):** email HTML is shown in a sandboxed iframe with scripts disabled, and AI-generated text is always shown as plain text.
+- **Backend input checks:**
+  - It only reads from the configured S3 bucket and only accepts `pdf/…` file keys.
+  - It only opens vector stores it created itself.
+  - Error responses don't reveal internal details.
+- **Uploads:** must be real PDFs (checked by their first bytes), 25 MB or less, with cleaned file names.
+- **CORS:** in production the backend only accepts browser requests from the frontend's domain.
+
+---
+
+## Troubleshooting
+
+| Problem | What to check |
+|---|---|
+| The first PDF action is slow or times out | The Render free plan was asleep. Wait a minute and try again, or open `/health` first to wake it up |
+| "PDF upload failed" | `NEXT_PUBLIC_BACKEND_URL` is set and the site was redeployed; the backend `/health` responds; both apps use the same S3 bucket and credentials |
+| Email summary says no AI key | `Next_GROP_API_KEY` is set in the frontend environment |
+| AI calls return 404 | The Groq model may have been retired. Set `GROQ_MODEL` to a model listed in your Groq console |
+| Outlook sign-in fails or redirects to localhost | `CALLBACK_URL` matches your domain and is added to the Microsoft app's redirect URIs |
+| Scanned PDF comes out empty | Tesseract is installed locally, or set `TESSERACT_CMD` (it's already included in the Docker image) |
+| Browser console shows CORS errors from the backend | `CORS_ORIGINS` on Render includes your frontend's exact domain |
+
+### Checks before pushing
 
 ```bash
 cd my-app && npx tsc --noEmit && npx next build
-python -m py_compile python-app/app.py python-app/helpers.py python-app/utils.py python-app/routes/*.py
+cd ../python-app && python -m py_compile app.py helpers.py utils.py ocr.py routes/*.py
 ```
+
+---
+
+## Known limitations
+
+- **No user accounts yet.** Everything is stored under a shared `demo` user, so anyone with a quiz's link can open it.
+- **"Add to calendar" doesn't work.** The button in the email panel has no matching server route, and the Outlook sign-in only asks for read access to the calendar (`Calendars.Read`).
+- **Free-plan wake-up delay** on the backend, as described above.
