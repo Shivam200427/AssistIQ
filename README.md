@@ -40,7 +40,7 @@
 - **Demo inbox:** try every feature without signing in.
 
 ### 📄 PDF Notes Extractor — `/pdfNotesExtractor`
-- Upload a typed or scanned PDF of up to 25 MB. Scanned pages are read with Tesseract OCR.
+- Upload a typed or scanned PDF of up to 4 MB (Vercel accepts request bodies up to 4.5 MB). Scanned pages are read with Tesseract OCR.
 - AssistIQ writes **long-form study notes** and opens them as a new PDF next to a study panel:
   - **Chat with PDF:** ask questions and get answers grounded in the document (RAG)
   - **Short notes:** a quick bullet digest
@@ -237,9 +237,10 @@ npm run dev                      # → http://localhost:3000
 | `AWS_S3_BUCKET` | ✅ | Bucket name |
 | `Next_GROP_API_KEY` | ✅ | Groq API key (`GROQ_API_KEY` also works) |
 | `GROQ_MODEL` | — | Groq model to try first, before the built-in fallbacks |
-| `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | Outlook only | From your Entra app registration |
+| `SESSION_SECRET` | ✅ | Random string (32+ characters) used to sign student sessions. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | Sign-in & Outlook | From your Entra app registration |
 | `CALLBACK_URL` | Outlook only | `http://localhost:3000/api/auth/callback` locally, `https://<your-domain>/api/auth/callback` in production |
-| `SCOPES` | Outlook only | `openid profile email Mail.Read Mail.Send Calendars.Read` |
+| `SCOPES` | Sign-in & Outlook | `openid profile email Mail.Read Mail.Send Calendars.ReadWrite` (ReadWrite is needed for "Add to calendar"; also grant it in the Microsoft app registration) |
 
 ### Backend: `python-app/.env`
 
@@ -330,10 +331,28 @@ The PDF upload and quiz routes are allowed to run for up to 300 seconds (`maxDur
 
 ---
 
+## Accounts, data and migrations
+
+- **Student identity** is the Microsoft account: after sign-in the server keeps the Microsoft account id in a signed, httpOnly session cookie (`SESSION_SECRET`). Saving quiz answers, creating quizzes, the mistakes notebook and documents uploaded while signed in all require that session.
+- **Quiz attempts** live in their own `quizattempts` collection, one per student per attempt; correct answers are only returned after that student submits.
+- **Documents** store S3 keys, and a fresh short-lived link is generated each time notes are opened.
+
+Before deploying this version, back up and run the migrations **at the same time as the deploy** (the old code reads answers from quiz documents):
+
+```bash
+mongodump --uri "$MONGO_URL" --out ../Edumate-backups/mongo-$(date +%Y%m%d)
+cd my-app
+node --env-file=.env scripts/migrate-quiz-attempts.mjs --dry-run   # review, then run without --dry-run
+node --env-file=.env scripts/backfill-document-keys.mjs --dry-run  # review, then run without --dry-run
+```
+
 ## Security
 
+- **Quiz privacy:** each student's answers are a separate attempt checked against the signed session; nobody can read or change another student's attempt, and answer keys stay hidden until you submit.
+- **PDF chat:** answers come only from the original PDF pages and cite them as [p. N]; if the document doesn't support an answer, the chat says so instead of guessing.
 - **Live quiz integrity:**
   - Host actions need the secret token that's issued when the game is created.
+  - Each player gets a private token when joining; answering or rejoining as that player requires it.
   - Players can't see correct answers, or other players' results, until each question ends.
   - Answer time is measured on the server, and each player can answer each question once.
 - **Outlook sign-in:** a one-time state value protects against login CSRF. Redirects only go to pages on the same site. Tokens are kept in an `httpOnly` cookie.
@@ -342,7 +361,7 @@ The PDF upload and quiz routes are allowed to run for up to 300 seconds (`maxDur
   - It only reads from the configured S3 bucket and only accepts `pdf/…` file keys.
   - It only opens vector stores it created itself.
   - Error responses don't reveal internal details.
-- **Uploads:** must be real PDFs (checked by their first bytes), 25 MB or less, with cleaned file names.
+- **Uploads:** must be real PDFs (checked by their first bytes), 4 MB or less, with cleaned file names.
 - **CORS:** in production the backend only accepts browser requests from the frontend's domain.
 
 ---
@@ -359,11 +378,12 @@ The PDF upload and quiz routes are allowed to run for up to 300 seconds (`maxDur
 | Scanned PDF comes out empty | Tesseract is installed locally, or set `TESSERACT_CMD` (it's already included in the Docker image) |
 | Browser console shows CORS errors from the backend | `CORS_ORIGINS` on Render includes your frontend's exact domain |
 
-### Checks before pushing
+### Tests and checks
 
 ```bash
-cd my-app && npx tsc --noEmit && npx next build
-cd ../python-app && python -m py_compile app.py helpers.py utils.py ocr.py routes/*.py
+cd my-app && npm test            # API tests against an in-memory MongoDB (no real services are called)
+npx tsc --noEmit && npx next build
+cd ../python-app && pip install pytest && python -m pytest tests -q   # PDF chat citation/abstention tests
 ```
 
 ---

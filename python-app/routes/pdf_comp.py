@@ -1,80 +1,71 @@
 import json
 from flask import request, jsonify, Blueprint
 from openrouter_client import prompt_completion
-from utils import load_vector_store
 from helpers import resolve_store_dir
+from rag import answer_with_citations, open_store, retrieve, abstain
 
 pdf_comp = Blueprint('pdf_comp', __name__)
 
-def ask_openrouter(question, context):
-    prompt = f"""
-   Use the PDF context to answer. 
-    Context:
-    {context}
+LEGACY_MESSAGE = (
+    "This document was processed before page citations were added, so I can't point to source pages for it. "
+    "Re-upload the PDF to get answers with page references."
+)
 
-    Question:
-    {question}
 
-    Answer clearly and simply.
-    """
-    return prompt_completion(prompt, temperature=0.3)
+def _context(hits):
+    return "\n\n".join(f"[p. {h['page']}]\n{h['text']}" for h in hits)
+
 
 @pdf_comp.route('/askquestion', methods=['POST'])
-def generate_ques():
+def ask_question():
+    """
+    mode "qa" (default, used by Chat): strict, page-cited answer or an explicit abstention.
+    mode "summary": short notes from retrieved passages, with page citations.
+    mode "ideas": suggestions (project ideas, quiz topics) inspired by the document — not factual claims.
+    """
     try:
         req = request.get_json() or {}
-        question = str(req.get('question') or "")[:2000]
+        question = str(req.get('question') or "").strip()[:2000]
+        mode = req.get("mode") or "qa"
         persist_dir = resolve_store_dir(req.get("store"))
-
         if not persist_dir:
-            return jsonify({"message": "A valid document reference is required", "answer": "Missing document reference."}), 400
-        
-        retriever = load_vector_store(persist_dir)
-        docs = []
-        try:
-            docs = retriever.invoke(question)
-        except Exception as ret_err:
-            print("Retriever invoke warning:", ret_err)
+            return jsonify({"message": "A valid document reference is required"}), 400
+        if not question:
+            return jsonify({"message": "Ask a question about the document."}), 400
 
-        context = "\n\n".join([d.page_content for d in docs if getattr(d, 'page_content', None)])
-        
-        answer = None
-        try:
-            answer = ask_openrouter(question, context)
-        except Exception as llm_err:
-            print("ask_openrouter error, using context fallback:", llm_err)
-            if context.strip():
-                top_chunks = [d.page_content.strip() for d in docs if d.page_content.strip()][:3]
-                answer = "Here is the relevant excerpt from your document:\n\n" + "\n\n---\n\n".join(top_chunks)
-            else:
-                answer = "Document indexed successfully. Ask a specific question about the document concepts."
+        store, cited = open_store(persist_dir)
 
-        if not answer or (isinstance(answer, str) and not answer.strip()):
-            if context.strip():
-                top_chunks = [d.page_content.strip() for d in docs if d.page_content.strip()][:3]
-                answer = "Relevant document information:\n\n" + "\n\n---\n\n".join(top_chunks)
-            else:
-                answer = "I could not find an answer in the uploaded document for this query."
+        if mode == "qa":
+            if not cited:
+                result = abstain("legacy_index")
+                result["answer"] = LEGACY_MESSAGE
+                return jsonify(result), 200
+            return jsonify(answer_with_citations(question, retrieve(store, question, k=5))), 200
 
-        if isinstance(answer, (list, dict)):
-            if isinstance(answer, list):
-                answer = "\n".join(str(item) for item in answer)
-            else:
-                answer = str(answer)
+        hits = retrieve(store, question, k=8) if cited else [
+            {"page": 0, "text": d.page_content, "score": 1.0} for d in store.similarity_search(question, k=8)
+        ]
+        if mode == "summary":
+            instructions = (
+                "Write concise study notes (headings + bullet points) using ONLY the excerpts. "
+                + ("End each bullet with the page it came from, like [p. 4]. Only cite pages shown in the excerpts." if cited else "")
+            )
+        else:
+            instructions = "Use the excerpts as inspiration. Follow the user's requested output format exactly."
+        prompt = f"{instructions}\n\nExcerpts:\n{_context(hits) if cited else chr(10).join(h['text'] for h in hits)}\n\nRequest: {question}"
+        answer = (prompt_completion(prompt, temperature=0.3) or "").strip()
+        if not answer:
+            return jsonify({"message": "The AI service returned an empty response. Please try again.", "retryable": True}), 502
+        return jsonify({"answer": answer, "mode": mode, "cited": cited, "pages_used": sorted({h["page"] for h in hits if h["page"]})}), 200
 
-        return jsonify({"answer": str(answer).strip()}), 200
     except Exception as e:
         print("askquestion error:", e)
-        return jsonify({"message": "Could not answer from this document", "answer": "Notice: the document could not be searched right now."}), 500
+        return jsonify({"message": "The document couldn't be searched right now. Please try again.", "retryable": True}), 500
 
-def cluster_to_concepts(clustered_chunks):
-    final_nodes = []
-    final_edges = []
 
-    for group_id, texts in clustered_chunks.items():
-        combined_text = "\n".join(texts[:5])
-
-        prompt = f"""
+def cluster_to_concepts(texts):
+    combined_text = "\n".join(texts[:6])
+    prompt = f"""
 Extract key concepts and relationships from the text.
 
 Return JSON ONLY in this exact structure:
@@ -87,56 +78,33 @@ Return JSON ONLY in this exact structure:
 TEXT:
 {combined_text}
 """
+    raw = prompt_completion(prompt, temperature=0.1).strip()
+    raw = raw.replace("```json", "").replace("```", "").strip()
+    data = json.loads(raw)  # raises -> caller reports a real error instead of a fake map
 
-        raw = prompt_completion(prompt, temperature=0.1).strip()
-        raw = raw.replace("```json", "").replace("```", "").strip()
-
-        try:
-            data = json.loads(raw)
-        except Exception:
-            continue
-
-        for node in data.get("nodes", []):
-            if node not in final_nodes:
-                final_nodes.append(node)
-
-        for edge in data.get("edges", []):
-            if len(edge) == 3:
-                final_edges.append({
-                    "source": edge[0],
-                    "label": edge[1],
-                    "target": edge[2]
-                })
-
-    if not final_nodes:
-        sample_concepts = ["Core Concept", "Key Principles", "Applications"]
-        return {
-            "nodes": [{"id": c, "label": c} for c in sample_concepts],
-            "edges": [
-                {"source": "Core Concept", "label": "explains", "target": "Key Principles"},
-                {"source": "Key Principles", "label": "powers", "target": "Applications"}
-            ]
-        }
-
-    return {
-        "nodes": [{"id": n, "label": n} for n in final_nodes],
-        "edges": final_edges
-    }
+    nodes, edges = [], []
+    for node in data.get("nodes", []):
+        if isinstance(node, str) and node not in nodes:
+            nodes.append(node)
+    for edge in data.get("edges", []):
+        if isinstance(edge, list) and len(edge) == 3:
+            edges.append({"source": edge[0], "label": edge[1], "target": edge[2]})
+    return {"nodes": [{"id": n, "label": n} for n in nodes], "edges": edges}
 
 
 @pdf_comp.route("/conceptmap", methods=["POST"])
 def concept_map_route():
     req = request.get_json() or {}
     persist_dir = resolve_store_dir(req.get("store"))
-
     if not persist_dir:
         return jsonify({"error": "A valid store is required"}), 400
-
-    retriever = load_vector_store(persist_dir)
-    docs = retriever.invoke("give main ideas and explanation")
-    chunks = [d.page_content for d in docs]
-
-    clusters = {0: chunks}
-    result = cluster_to_concepts(clusters)
-
-    return jsonify(result), 200
+    try:
+        store, _ = open_store(persist_dir)
+        docs = store.similarity_search("main ideas, key concepts and how they relate", k=6)
+        result = cluster_to_concepts([d.page_content for d in docs])
+        if not result["nodes"]:
+            return jsonify({"error": "No concepts could be extracted from this document.", "retryable": True}), 422
+        return jsonify(result), 200
+    except Exception as e:
+        print("conceptmap error:", e)
+        return jsonify({"error": "The concept map couldn't be generated. Please try again.", "retryable": True}), 502

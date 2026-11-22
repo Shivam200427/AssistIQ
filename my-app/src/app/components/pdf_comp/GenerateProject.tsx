@@ -4,51 +4,39 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { Rocket, Sparkles } from "lucide-react";
 
-export default function GenerateProject({ persist_dir }: { persist_dir: string }) {
+export default function GenerateProject({ persist_dir }: { persist_dir: string; documentId?: string }) {
     const [projects, setProjects] = useState<{ title: string; description: string }[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
         let mounted = true;
         const generateProject = async () => {
             try {
                 setLoading(true);
+                setError("");
                 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:5000";
                 const res = await axios.post(`${backendUrl}/askquestion`, {
                     question: "Suggest 3 unique project ideas based on this PDF. Return ONLY a JSON array of objects with keys 'title' and 'description'. No markdown fences.",
-                    store: persist_dir
+                    store: persist_dir,
+                    mode: "ideas",
                 });
-                if (mounted) {
-                    const raw = res.data?.answer;
-                    let list: { title: string; description: string }[] = [];
-                    if (Array.isArray(raw)) {
-                        list = raw;
-                    } else if (typeof raw === "string") {
-                        try {
-                            const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-                            const parsed = JSON.parse(cleaned);
-                            if (Array.isArray(parsed)) list = parsed;
-                        } catch {
-                            list = [
-                                { title: "Automated Domain Knowledge Pipeline", description: raw.slice(0, 200) }
-                            ];
-                        }
-                    }
-                    if (list.length === 0) {
-                        list = [
-                            { title: "Smart Study Assistant", description: "Build an interactive platform leveraging this PDF's concepts with automated testing and flashcards." },
-                            { title: "Real-time Concept Graph Engine", description: "Develop a visual knowledge graph modeling relationships extracted from this curriculum." }
-                        ];
-                    }
-                    setProjects(list);
+                if (!mounted) return;
+                const raw = String(res.data?.answer || "").replace(/```json/g, "").replace(/```/g, "").trim();
+                let list: { title: string; description: string }[] = [];
+                try {
+                    const parsed = JSON.parse(raw.match(/\[[\s\S]*\]/)?.[0] || raw);
+                    if (Array.isArray(parsed)) list = parsed.filter((p) => p && p.title && p.description);
+                } catch {
+                    list = [];
                 }
-            } catch (err) {
-                if (mounted) {
-                    setProjects([
-                        { title: "Smart Document Intelligence System", description: "Implement vector search and interactive Q&A over lecture resources." },
-                        { title: "Concept Visualizer Application", description: "Interactive web dashboard visualizing key topic hierarchies." }
-                    ]);
+                if (list.length === 0) {
+                    setError("The AI's reply couldn't be read as project ideas.");
                 }
+                setProjects(list);
+            } catch (err: any) {
+                if (mounted) setError(err?.response?.data?.message || "Couldn't reach the document service.");
             } finally {
                 if (mounted) setLoading(false);
             }
@@ -58,7 +46,7 @@ export default function GenerateProject({ persist_dir }: { persist_dir: string }
             generateProject();
         }
         return () => { mounted = false; };
-    }, [persist_dir]);
+    }, [persist_dir, attempt]);
 
     return (
         <div className="h-full flex flex-col font-body text-white bg-[#070a12] rounded-2xl border border-[#0ea5e9]/25 overflow-hidden">
@@ -74,6 +62,11 @@ export default function GenerateProject({ persist_dir }: { persist_dir: string }
                     <div className="h-full flex flex-col items-center justify-center gap-3">
                         <div className="w-6 h-6 border-2 border-[#38bdf8] border-t-transparent rounded-full animate-spin" />
                         <span className="text-xs text-gray-400">Ideating project blueprints...</span>
+                    </div>
+                ) : error ? (
+                    <div role="alert" className="flex flex-col items-center gap-3 py-10 text-center text-sm text-red-300">
+                        <span>{error}</span>
+                        <button onClick={() => setAttempt((n) => n + 1)} className="rounded-xl border border-[#38bdf8]/50 px-4 py-2 text-[#38bdf8] hover:bg-[#0ea5e9]/10 cursor-pointer">Try again</button>
                     </div>
                 ) : (
                     <div className="space-y-3">

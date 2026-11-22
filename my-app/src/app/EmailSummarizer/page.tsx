@@ -164,24 +164,53 @@ const Page = () => {
     setshoweditwindow(false);
   };
 
+  type CalendarDraft = { subject: string; date: string; startTime: string; endTime: string; location: string; allDay: boolean };
+  const [calendarDraft, setCalendarDraft] = useState<CalendarDraft | null>(null);
+  const [calendarMessage, setCalendarMessage] = useState("");
+
+  // Step 1: propose an event (nothing is written yet) and open the preview.
   const handleAddToCalendar = async () => {
     if (!events || addingEvent) return;
     try {
       setAddingEvent(true);
-      setEventAddedStatus("SYNCING...");
-      const res = await axios.post('/api/calender', {
-        title: SelectedEmail?.subject || "Academic Deadline",
-        body: events,
+      setCalendarMessage("");
+      const today = new Date();
+      const res = await axios.post('/api/calender/draft', {
+        subject: SelectedEmail?.subject || "",
+        events,
+        today: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`,
       });
-      if (res.status === 200 || res.status === 201) {
-        setEventAddedStatus("✓ ADDED TO CALENDAR");
-      }
-    } catch (err: any) {
-      console.log("Calendar sync notice:", err.message);
-      setEventAddedStatus("⚠️ SYNC NOTICE (CHECK TOKEN)");
+      setCalendarDraft(res.data.draft);
+      setCalendarMessage(res.data.message || "");
+    } catch {
+      setCalendarDraft({ subject: SelectedEmail?.subject || "Event", date: "", startTime: "", endTime: "", location: "", allDay: false });
+      setCalendarMessage("Couldn't read the details automatically — fill them in yourself.");
     } finally {
       setAddingEvent(false);
-      setTimeout(() => setEventAddedStatus(null), 3000);
+    }
+  };
+
+  // Step 2: write the event only after the student confirms the preview.
+  const confirmCalendarEvent = async () => {
+    if (!calendarDraft) return;
+    if (usingDemo) {
+      setCalendarMessage("Demo inbox: connect your Outlook account to add events to a real calendar.");
+      return;
+    }
+    try {
+      setAddingEvent(true);
+      await axios.post('/api/calender', {
+        confirmed: true,
+        event: calendarDraft,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      });
+      setCalendarDraft(null);
+      setEventAddedStatus("✓ Added to your calendar");
+      setTimeout(() => setEventAddedStatus(null), 4000);
+    } catch (err: any) {
+      setCalendarMessage(err?.response?.data?.message || "The event couldn't be added. Nothing was changed in your calendar.");
+    } finally {
+      setAddingEvent(false);
     }
   };
 
@@ -276,10 +305,10 @@ const Page = () => {
         <div>
           <div className='inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#0ea5e9]/15 border border-[#0ea5e9]/30 text-[#38bdf8] font-tag text-xs uppercase mb-2 transform -rotate-1'>
             <Paintbrush className="w-3.5 h-3.5" />
-            <span>✦ ARSENAL 01: INBOX SNIPER ✦</span>
+            <span>✦ Email Summary ✦</span>
           </div>
           <h1 className='text-3xl sm:text-4xl font-extrabold text-white'>
-            Email <span className='font-tag text-[#38bdf8] spray-glow'>Summarizer</span>
+            Email <span className='font-tag text-[#38bdf8] spray-glow'>Summary</span>
           </h1>
           <p className='text-gray-400 text-xs md:text-sm mt-1'>
             Extract essential action points, auto-draft replies, and sync deadlines from your connected inbox.
@@ -291,7 +320,7 @@ const Page = () => {
           {isAuthorized === false && !usingDemo ? (
             <button
               onClick={handleConnectOutlook}
-              className='flex items-center gap-2 text-xs font-bold bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] px-4 py-2.5 rounded-xl transition-all font-tag spray-glow shadow-[0_0_15px_rgba(14,165,233,0.4)] cursor-pointer'
+              className='flex items-center gap-2 text-xs font-bold bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] px-4 py-2.5 rounded-xl transition-all spray-glow shadow-[0_0_15px_rgba(14,165,233,0.4)] cursor-pointer'
             >
               <KeyRound className='w-4 h-4' />
               CONNECT OUTLOOK
@@ -347,14 +376,14 @@ const Page = () => {
             <div className='flex items-center gap-2.5 w-full md:w-auto'>
               <button
                 onClick={handleConnectOutlook}
-                className='flex-1 md:flex-none flex items-center justify-center gap-2 bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs px-4 py-2.5 rounded-xl transition-all font-tag cursor-pointer'
+                className='flex-1 md:flex-none flex items-center justify-center gap-2 bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer'
               >
                 <KeyRound className='w-3.5 h-3.5' />
                 CONNECT NOW
               </button>
               <button
                 onClick={handleLoadDemo}
-                className='flex-1 md:flex-none bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs px-4 py-2.5 rounded-xl transition-all font-tag cursor-pointer'
+                className='flex-1 md:flex-none bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer'
               >
                 LOAD DEMO INBOX
               </button>
@@ -374,7 +403,7 @@ const Page = () => {
             <div className='flex items-center gap-1.5 p-1 bg-black/50 rounded-xl border border-[#16243f] mb-3'>
               <button
                 onClick={() => setFilterMode("all")}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all font-tag cursor-pointer ${
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   filterMode === "all"
                     ? "bg-[#0ea5e9] text-[#070a12] shadow-[0_0_10px_rgba(14,165,233,0.4)]"
                     : "text-gray-400 hover:text-white"
@@ -384,7 +413,7 @@ const Page = () => {
               </button>
               <button
                 onClick={() => setFilterMode("tags")}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all font-tag cursor-pointer ${
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   filterMode === "tags"
                     ? "bg-[#0ea5e9] text-[#070a12] shadow-[0_0_10px_rgba(14,165,233,0.4)]"
                     : "text-gray-400 hover:text-white"
@@ -407,7 +436,7 @@ const Page = () => {
                   />
                   <button
                     onClick={addkeyword}
-                    className='bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs px-2.5 py-1.5 rounded-xl transition-colors font-tag cursor-pointer'
+                    className='bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs px-2.5 py-1.5 rounded-xl transition-colors cursor-pointer'
                   >
                     +
                   </button>
@@ -456,13 +485,13 @@ const Page = () => {
                     <div className='flex flex-col gap-2 w-full mt-2'>
                       <button
                         onClick={handleConnectOutlook}
-                        className='w-full bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold py-2 rounded-xl text-xs font-tag cursor-pointer'
+                        className='w-full bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold py-2 rounded-xl text-xs cursor-pointer'
                       >
                         CONNECT ACCOUNT
                       </button>
                       <button
                         onClick={handleLoadDemo}
-                        className='w-full bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] py-2 rounded-xl text-xs font-tag cursor-pointer'
+                        className='w-full bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] py-2 rounded-xl text-xs cursor-pointer'
                       >
                         LOAD DEMO EMAILS
                       </button>
@@ -478,19 +507,19 @@ const Page = () => {
                     <div className='flex flex-col gap-2 w-full mt-2'>
                       <button
                         onClick={fetchEmails}
-                        className='w-full bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold py-2 rounded-xl text-xs font-tag flex items-center justify-center gap-1.5 cursor-pointer'
+                        className='w-full bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer'
                       >
                         <RefreshCw className='w-3.5 h-3.5' /> REFRESH INBOX
                       </button>
                       <button
                         onClick={handleSwitchAccount}
-                        className='w-full bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] py-2 rounded-xl text-xs font-tag flex items-center justify-center gap-1.5 cursor-pointer'
+                        className='w-full bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer'
                       >
                         <ArrowRightLeft className='w-3.5 h-3.5' /> SWITCH OUTLOOK ACCOUNT
                       </button>
                       <button
                         onClick={handleLoadDemo}
-                        className='w-full bg-black/40 hover:bg-[#11192e] border border-[#16243f] text-gray-400 hover:text-white py-2 rounded-xl text-xs font-tag cursor-pointer'
+                        className='w-full bg-black/40 hover:bg-[#11192e] border border-[#16243f] text-gray-400 hover:text-white py-2 rounded-xl text-xs cursor-pointer'
                       >
                         PREVIEW DEMO EMAILS
                       </button>
@@ -501,7 +530,7 @@ const Page = () => {
                     <span>No emails match your active tags.</span>
                     <button
                       onClick={() => setFilterMode("all")}
-                      className='bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] px-3 py-1.5 rounded-lg text-xs font-tag cursor-pointer'
+                      className='bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] px-3 py-1.5 rounded-lg text-xs cursor-pointer'
                     >
                       VIEW ALL EMAILS ({Emails.length})
                     </button>
@@ -671,9 +700,9 @@ const Page = () => {
                     <button
                       onClick={handleAddToCalendar}
                       disabled={addingEvent}
-                      className='mt-2 w-full bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-bold text-xs py-2.5 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 font-tag tracking-wider'
+                      className='mt-2 w-full bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-bold text-xs py-2.5 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50'
                     >
-                      {eventAddedStatus || "SYNC TO CALENDAR"}
+                      {eventAddedStatus || (addingEvent ? "Preparing preview…" : "Add to calendar…")}
                     </button>
                   )}
                 </div>
@@ -698,6 +727,54 @@ const Page = () => {
         )}
       </div>
 
+      {/* Calendar event preview — nothing is written until the student confirms */}
+      {calendarDraft && (
+        <div className='fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4' role='dialog' aria-modal='true' aria-label='Review calendar event'>
+          <div className='w-full max-w-md rounded-3xl bg-[#0d1527] border border-[#16243f] p-6 flex flex-col gap-3 text-sm'>
+            <div className='flex justify-between items-center'>
+              <h2 className='font-bold text-white text-base'>Review event before adding</h2>
+              <button onClick={() => setCalendarDraft(null)} className='text-gray-400 hover:text-white p-1 cursor-pointer' aria-label='Cancel'>
+                <X className='w-5 h-5' />
+              </button>
+            </div>
+            <p className='text-xs text-gray-400'>Check the details. Nothing is added to your calendar until you press Confirm.</p>
+            <label className='text-xs text-gray-300'>Title
+              <input value={calendarDraft.subject} onChange={(e) => setCalendarDraft({ ...calendarDraft, subject: e.target.value })} className='mt-1 w-full rounded-xl border border-[#16243f] bg-black/50 px-3 py-2 text-white outline-none focus:border-[#38bdf8]' />
+            </label>
+            <label className='text-xs text-gray-300'>Date
+              <input type='date' value={calendarDraft.date} onChange={(e) => setCalendarDraft({ ...calendarDraft, date: e.target.value })} className='mt-1 w-full rounded-xl border border-[#16243f] bg-black/50 px-3 py-2 text-white outline-none focus:border-[#38bdf8]' />
+            </label>
+            <label className='flex items-center gap-2 text-xs text-gray-300 cursor-pointer'>
+              <input type='checkbox' checked={calendarDraft.allDay} onChange={(e) => setCalendarDraft({ ...calendarDraft, allDay: e.target.checked })} className='accent-[#38bdf8]' /> All-day
+            </label>
+            {!calendarDraft.allDay && (
+              <div className='grid grid-cols-2 gap-2'>
+                <label className='text-xs text-gray-300'>Start
+                  <input type='time' value={calendarDraft.startTime} onChange={(e) => setCalendarDraft({ ...calendarDraft, startTime: e.target.value })} className='mt-1 w-full rounded-xl border border-[#16243f] bg-black/50 px-3 py-2 text-white outline-none focus:border-[#38bdf8]' />
+                </label>
+                <label className='text-xs text-gray-300'>End
+                  <input type='time' value={calendarDraft.endTime} onChange={(e) => setCalendarDraft({ ...calendarDraft, endTime: e.target.value })} className='mt-1 w-full rounded-xl border border-[#16243f] bg-black/50 px-3 py-2 text-white outline-none focus:border-[#38bdf8]' />
+                </label>
+              </div>
+            )}
+            <label className='text-xs text-gray-300'>Location (optional)
+              <input value={calendarDraft.location} onChange={(e) => setCalendarDraft({ ...calendarDraft, location: e.target.value })} className='mt-1 w-full rounded-xl border border-[#16243f] bg-black/50 px-3 py-2 text-white outline-none focus:border-[#38bdf8]' />
+            </label>
+            {calendarMessage && <p role='alert' className='text-xs text-amber-300'>{calendarMessage}</p>}
+            <div className='flex justify-end gap-2 pt-2'>
+              <button onClick={() => setCalendarDraft(null)} className='rounded-xl border border-[#16243f] px-4 py-2 text-gray-200 cursor-pointer'>Cancel</button>
+              <button
+                onClick={confirmCalendarEvent}
+                disabled={addingEvent || !calendarDraft.subject.trim() || !calendarDraft.date || (!calendarDraft.allDay && (!calendarDraft.startTime || !calendarDraft.endTime))}
+                className='rounded-xl bg-[#38bdf8] px-4 py-2 font-bold text-[#070a12] hover:bg-[#7dd3fc] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer'
+              >
+                {addingEvent ? "Adding…" : "Confirm & add"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Draft Modal */}
       {showeditwindow && (
         <div className='fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4'>
@@ -719,7 +796,7 @@ const Page = () => {
               />
               <button
                 onClick={editted}
-                className='w-full bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold uppercase text-xs py-3 rounded-xl transition-all font-tag cursor-pointer'
+                className='w-full bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold uppercase text-xs py-3 rounded-xl transition-all cursor-pointer'
               >
                 SAVE DRAFT // READY
               </button>

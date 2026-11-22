@@ -32,6 +32,7 @@ const PlayerSchema = new mongoose.Schema({
   lastAnswer: { type: PlayerAnswerSchema, default: null },
   answersHistory: { type: [PlayerAnswerSchema], default: [] },
   joinedAt: { type: Date, default: Date.now },
+  tokenHash: { type: String, default: null },
 }, { _id: false });
 
 const LiveGameSchema = new mongoose.Schema({

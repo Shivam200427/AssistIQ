@@ -30,26 +30,30 @@ def generate_ques():
         req = request.get_json(force=True) or {}
         prompt = str(req.get('prompt') or "")[:500]
         key = req.get("key") or ""
+        count = min(max(int(req.get("count") or 5), 3), 20)
+        difficulty = str(req.get("difficulty") or "mixed")
+        if difficulty not in ("easy", "medium", "hard", "mixed"):
+            difficulty = "mixed"
+        request_text = (
+            f"{prompt}\nWrite exactly {count} questions. Difficulty: "
+            f"{'a mix of easy, medium and hard' if difficulty == 'mixed' else difficulty}."
+        )
 
         if not key:
-            question = generate_question(prompt, "no content")
-            question = clean_and_parse_json(question)
-            return jsonify({
-                "status": "success",
-                "questions": question,
-            }), 200
+            questions = clean_and_parse_json(generate_question(request_text, "no content"))
+            return jsonify({"status": "success", "source": "topic", "questions": questions}), 200
 
         if not is_valid_pdf_key(key):
             return jsonify({"status": "error", "message": "Invalid document key"}), 400
 
-        content = extract_pdf(get_bucket(), key)
-        content = clean_content(content)
-        question = generate_question(prompt, content)
-        question = clean_and_parse_json(question)
-        return jsonify({
-            "status": "success",
-            "questions": question,
-        }), 200
+        content = clean_content(extract_pdf(get_bucket(), key)).strip()
+        if len(content) < 50:
+            # Never write "document" questions without a document.
+            return jsonify({"status": "error", "message": "No readable text was found in this PDF."}), 422
+        questions = clean_and_parse_json(generate_question(request_text, content[:60000]))
+        if not questions:
+            return jsonify({"status": "error", "message": "The AI returned no questions."}), 502
+        return jsonify({"status": "success", "source": "document", "questions": questions}), 200
 
     except Exception as e:
         print(f"Quiz generation error: {e}")

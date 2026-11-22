@@ -63,24 +63,24 @@ const HomePage = () => {
           </h1>
 
           <p className="text-gray-300 text-base sm:text-lg max-w-xl mt-5 leading-relaxed font-body">
-            Raw, focused academic intelligence. We scrapped the corporate clutter and built only the 4 mission-critical weapons you need to dominate your coursework.
+            Upload your lecture PDFs and start studying: notes that cite their source pages, a chat that answers only from your document, and quizzes built from it. Plus email summaries and a study planner.
           </p>
 
-          {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-4 mt-8">
-            <button
-              onClick={handleScrollToFeatures}
-              className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] text-[#070a12] hover:from-[#7dd3fc] hover:to-[#38bdf8] font-extrabold text-sm uppercase tracking-wider px-7 py-3.5 rounded-2xl shadow-[0_4px_25px_rgba(14,165,233,0.4)] transition-all flex items-center gap-2.5 cursor-pointer transform hover:-translate-y-0.5 font-tag"
-            >
-              <span>SPRAY THE 4 ARSENALS</span>
-              <ArrowDown className="w-4 h-4" />
-            </button>
+          {/* Main action first; other tools are one click away */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-8 w-full sm:w-auto">
             <button
               onClick={() => router.push("/pdfNotesExtractor")}
-              className="border-2 border-[#0ea5e9]/40 bg-[#0d1527] text-[#38bdf8] hover:bg-[#0ea5e9]/15 font-bold text-sm tracking-wide px-6 py-3.5 rounded-2xl transition-all flex items-center gap-2 cursor-pointer shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
+              className="bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#070a12] font-bold text-base px-7 py-4 rounded-2xl shadow-[0_4px_25px_rgba(14,165,233,0.4)] transition-all flex items-center justify-center gap-2.5 cursor-pointer"
             >
-              <BookOpen className="w-4 h-4 text-[#38bdf8]" />
-              <span>LAUNCH DOC WILDSTYLE</span>
+              <BookOpen className="w-5 h-5" />
+              <span>Upload a PDF and start studying</span>
+            </button>
+            <button
+              onClick={handleScrollToFeatures}
+              className="text-gray-300 hover:text-white font-semibold text-sm px-4 py-3 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>See all tools</span>
+              <ArrowDown className="w-4 h-4" />
             </button>
           </div>
 
@@ -88,12 +88,12 @@ const HomePage = () => {
           <div className="mt-8 pt-6 border-t border-[#16243f] flex items-center gap-6 text-xs text-gray-400 font-medium">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[#38bdf8] animate-ping" />
-              <span className="text-gray-300 font-bold font-tag">4 ARSENALS READY</span>
+              <span className="text-gray-300 font-semibold">4 study tools</span>
             </div>
             <span>•</span>
-            <span>ZERO BLOAT</span>
+            <span>Answers cite PDF pages</span>
             <span>•</span>
-            <span>CHROMA RAG + LLM</span>
+            <span>Free</span>
           </div>
         </motion.div>
 
@@ -106,11 +106,8 @@ const HomePage = () => {
         >
           <div className="bg-[#0d1527] rounded-3xl p-6 sm:p-7 border border-[#16243f] relative overflow-hidden">
             <div className="flex items-center justify-between pb-3 border-b border-[#16243f] mb-4">
-              <span className="font-tag text-xs text-[#38bdf8] flex items-center gap-2">
-                <Paintbrush className="w-4 h-4" /> STREET ARSENAL HUD
-              </span>
-              <span className="font-stencil text-[10px] text-gray-400 tracking-widest bg-black/60 px-2 py-0.5 rounded border border-white/10 uppercase">
-                v2.6 LIVE
+              <span className="text-sm font-semibold text-[#38bdf8] flex items-center gap-2">
+                <Paintbrush className="w-4 h-4" /> Your study tools
               </span>
             </div>
 
@@ -131,11 +128,11 @@ const HomePage = () => {
                       />
                     </div>
                     <div>
-                      <div className="font-tag text-sm text-white group-hover:text-[#38bdf8] transition-colors">
-                        {item.streetName}
+                      <div className="text-sm font-semibold text-white group-hover:text-[#38bdf8] transition-colors">
+                        {item.name}
                       </div>
                       <div className="text-xs text-gray-400 font-body line-clamp-1">
-                        {item.name}
+                        {item.pills.join(" · ")}
                       </div>
                     </div>
                   </div>
@@ -150,10 +147,7 @@ const HomePage = () => {
             {/* Mini Street Art Stencil Banner */}
             <div className="mt-5 pt-4 border-t border-[#16243f] flex items-center justify-between text-xs text-gray-400 font-body">
               <span className="flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-[#38bdf8]" /> Tap any piece to launch
-              </span>
-              <span className="font-tag text-[#38bdf8] text-xs">
-                INSTANT AI →
+                <Sparkles className="w-3.5 h-3.5 text-[#38bdf8]" /> Tap a tool to open it
               </span>
             </div>
           </div>
@@ -163,11 +157,11 @@ const HomePage = () => {
       {/* Graffiti Running Ribbon / Ticker */}
       <SlideShow />
 
-      {/* The 3 Core Services Section */}
+      {/* Core tools */}
       <section id="features" className="max-w-7xl mx-auto px-6 lg:px-12 py-16">
         <div className="flex flex-col justify-center items-center mb-14 text-center gap-3">
           <div className="font-tag text-xs tracking-wider text-[#38bdf8] bg-[#0ea5e9]/15 border border-[#0ea5e9]/30 px-3.5 py-1 rounded-full uppercase transform -rotate-1">
-            ✦ AUTHENTIC STREET ARSENALS ✦
+            ✦ Study tools ✦
           </div>
           <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-white font-body">
             The 4 Street Masterpieces

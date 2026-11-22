@@ -336,6 +336,7 @@ export const usePlanly = create<PlanlyStore>()(
               due: t.due ?? null,
               difficulty: t.difficulty || "medium",
               pinned: t.pinned || false,
+              link: typeof t.link === "string" && t.link.startsWith("/") ? t.link : null,
               order: minOrder - 1,
               createdAt: Date.now(),
               completedAt: status === "done" ? Date.now() : null,

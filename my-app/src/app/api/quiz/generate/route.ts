@@ -1,192 +1,177 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "../../utils/db";
-import s3 from '../../utils/s3'
-import Quiz from "../../lib/Quiz";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import axios from "axios";
-import { getRemoteBackendUrl, groqChat, getGroqKey } from "../../utils/ai";
+import { connectDB } from "../../utils/db";
+import s3 from "../../utils/s3";
+import Quiz from "../../lib/Quiz";
+import { getGroqKey, groqChat } from "../../utils/ai";
 import { safeKeySegment, validatePdf } from "../../utils/upload";
+import { getSession } from "../../utils/session";
+import { extractQuestionList, validateQuestions } from "../validate";
+import { DocError, loadAccessibleDocument } from "../../utils/documents";
 
 export const maxDuration = 300;
 
-function extractQuestions(raw: any): any[] {
-    if (!raw) return [];
-    if (typeof raw === "string") {
-        try {
-            raw = JSON.parse(raw);
-        } catch (e) {
-            const match = raw.match(/\[[\s\S]*\]/) || raw.match(/\{[\s\S]*\}/);
-            if (match) {
-                try {
-                    raw = JSON.parse(match[0]);
-                } catch (e2) {}
-            }
-        }
-    }
-    if (Array.isArray(raw)) return raw;
-    if (typeof raw === "object" && raw !== null) {
-        if (Array.isArray(raw.questions)) return raw.questions;
-        if (Array.isArray(raw.data)) return raw.data;
-        for (const key of Object.keys(raw)) {
-            if (Array.isArray(raw[key])) return raw[key];
-            if (typeof raw[key] === "object" && raw[key] !== null) {
-                const nested = extractQuestions(raw[key]);
-                if (nested.length > 0) return nested;
-            }
-        }
-    }
-    return [];
+const DIFFICULTIES = ["easy", "medium", "hard", "mixed"] as const;
+type Difficulty = (typeof DIFFICULTIES)[number];
+
+/** Every failure is reported explicitly — the route never silently swaps in different content. */
+function fail(status: number, code: string, message: string, extra: Record<string, unknown> = {}) {
+  return NextResponse.json({ code, message, ...extra }, { status });
 }
 
-function normalizeQuestions(rawList: any[]): any[] {
-    return rawList.map((item, idx) => {
-        if (!item || typeof item !== "object") return null;
+async function topicQuestions(topic: string, count: number, difficulty: Difficulty) {
+  if (!getGroqKey()) throw Object.assign(new Error("AI is not configured on the server."), { code: "AI_UNAVAILABLE" });
+  const aiPrompt = `You are an expert quiz writer. Write ${count} multiple-choice questions about: "${topic}".
+Difficulty: ${difficulty === "mixed" ? "a mix of easy, medium and hard" : difficulty}.
+Each question must have exactly 4 distinct options and exactly one correct answer.
+Respond with JSON only:
+{"questions":[{"questionText":"...","answers":[{"label":"A","option":"..."},{"label":"B","option":"..."},{"label":"C","option":"..."},{"label":"D","option":"..."}],"correctAnswer":"A|B|C|D","explanation":"one sentence","topic":"2-4 word concept this question tests"}]}`;
+  const content = await groqChat(aiPrompt, { temperature: 0.4, json: true, timeout: 30000 });
+  return extractQuestionList(content);
+}
 
-        const questionText = item.questionText || item.question || item.title || `Question ${idx + 1}`;
-        const rawAnswers = item.answers || item.options || item.choices || [];
-
-        let answers: { label: string; option: string }[] = [];
-        if (Array.isArray(rawAnswers)) {
-            answers = rawAnswers.map((ans, aIdx) => {
-                const defaultLabel = String.fromCharCode(65 + aIdx);
-                if (typeof ans === "string") {
-                    const match = ans.match(/^([A-D])[.\):\-]\s*(.*)$/i);
-                    if (match) {
-                        return { label: match[1].toUpperCase(), option: match[2] || ans };
-                    }
-                    return { label: defaultLabel, option: ans };
-                } else if (typeof ans === "object" && ans !== null) {
-                    return {
-                        label: ans.label || ans.key || defaultLabel,
-                        option: ans.option || ans.text || ans.value || String(ans),
-                    };
-                }
-                return { label: defaultLabel, option: String(ans) };
-            });
-        }
-
-        return {
-            questionText,
-            answers,
-            correctAnswer: item.correctAnswer || item.answer || "A",
-            choosenAnswer: "",
-            explanation: item.explanation || "",
-        };
-    }).filter(Boolean);
+async function documentQuestions(key: string, topic: string, count: number, difficulty: Difficulty) {
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  if (!backendUrl) throw Object.assign(new Error("The document service is not configured."), { code: "BACKEND_UNAVAILABLE" });
+  const res = await axios.post(
+    `${backendUrl}/generate_questions`,
+    { prompt: topic, key, count, difficulty },
+    { timeout: 240000 }
+  );
+  return extractQuestionList(res.data?.questions);
 }
 
 export async function POST(req: NextRequest) {
-    try {
-        const formdata = await req.formData();
-        const userID = safeKeySegment(formdata.get("userID"), "demo");
-        const prompt = String(formdata.get("prompt") || "").trim().slice(0, 500) || "General Knowledge";
-        const pdfEntry = formdata.get("pdf");
-        const pdf = pdfEntry instanceof File ? pdfEntry : null;
+  const session = getSession(req);
+  if (!session) return fail(401, "SIGN_IN_REQUIRED", "Sign in with Microsoft to create and save quizzes.");
 
-        let buffer = null;
-        let key = null;
-        let bucket = process.env.AWS_S3_BUCKET || "edumatebucket01";
+  let stage = "read_request";
+  try {
+    const form = await req.formData();
+    const topic = String(form.get("prompt") || "").trim().slice(0, 500);
+    const count = Math.min(Math.max(Math.round(Number(form.get("count")) || 5), 3), 20);
+    const difficultyRaw = String(form.get("difficulty") || "mixed");
+    const difficulty: Difficulty = (DIFFICULTIES as readonly string[]).includes(difficultyRaw) ? (difficultyRaw as Difficulty) : "mixed";
+    const allowTopicFallback = form.get("allowTopicFallback") === "true";
+    const pdfEntry = form.get("pdf");
+    const pdf = pdfEntry instanceof File ? pdfEntry : null;
+    const documentId = form.get("documentId");
 
-        if (pdf != null) {
-            buffer = Buffer.from(await pdf.arrayBuffer());
-            const invalid = validatePdf(pdf, buffer);
-            if (invalid) {
-                return NextResponse.json({ message: invalid }, { status: 400 });
-            }
-            key = `pdf/${userID}/${Date.now()}/-${safeKeySegment(pdf.name, "document.pdf")}`;
+    if (!pdf && !topic && !documentId) return fail(400, "MISSING_INPUT", "Enter a topic or attach a PDF.");
 
-            try {
-                await s3.send(new PutObjectCommand({
-                    Bucket: bucket,
-                    Key: key,
-                    Body: buffer!,
-                    ContentType: "application/pdf",
-                }));
-            } catch (s3Err) {
-                console.warn("S3 upload warning:", s3Err);
-            }
+    let source: "document" | "topic" | "topic_fallback" = pdf || documentId ? "document" : "topic";
+    let sourceNote = "";
+    let key: string | null = null;
+    let rawList: any[] = [];
+
+    if (documentId && !pdf) {
+      // Quiz from a PDF already uploaded to PDF Notes: use its stored original file.
+      stage = "load_document";
+      await connectDB();
+      let doc: any;
+      try {
+        doc = await loadAccessibleDocument(String(documentId), session);
+      } catch (e: any) {
+        if (e instanceof DocError) return fail(e.status, "DOCUMENT_UNAVAILABLE", e.message);
+        throw e;
+      }
+      if (!doc.sourceKey) {
+        return fail(409, "DOCUMENT_HAS_NO_SOURCE", "This PDF was uploaded before quizzes could use it. Re-upload it to make a quiz from the document.");
+      }
+      key = doc.sourceKey;
+      stage = "document_questions";
+      try {
+        rawList = await documentQuestions(doc.sourceKey, topic || "the key ideas in this document", count, difficulty);
+      } catch (e: any) {
+        console.error("Document quiz generation failed:", e?.code || e?.message);
+        if (!allowTopicFallback || !topic) {
+          return fail(502, "DOCUMENT_QUIZ_FAILED", "We couldn't read your PDF to write questions from it, so no quiz was made.", {
+            stage,
+            retryable: true,
+            fallbackAvailable: !!topic,
+          });
         }
-
-        await connectDB();
-
-        let ques: any[] = [];
-        const backendUrl = getRemoteBackendUrl();
-
-        // 1. Try Python backend if it is deployed remotely
-        if (backendUrl) {
-            try {
-                const bakendres = await axios.post(
-                    `${backendUrl}/generate_questions`,
-                    { prompt, key },
-                    // PDF quizzes need the backend to read the document; topic-only quizzes can fall back to Groq quickly.
-                    { timeout: key ? 240000 : 20000 }
-                );
-                const rawList = extractQuestions(bakendres.data?.questions);
-                ques = normalizeQuestions(rawList);
-            } catch (bErr: any) {
-                console.log("Python backend unavailable for quiz generation, falling back to direct Groq:", bErr?.message);
-            }
-        }
-
-        // 2. Direct Groq AI Generation fallback
-        if (ques.length === 0) {
-            if (getGroqKey()) {
-                const aiPrompt = `You are an expert quiz generator. Generate 5 challenging multiple-choice questions for: "${prompt}".
-Respond with valid JSON containing a "questions" array in this exact schema:
-{
-  "questions": [
-    {
-      "questionText": "What is ...?",
-      "answers": [
-        { "label": "A", "option": "Option A text" },
-        { "label": "B", "option": "Option B text" },
-        { "label": "C", "option": "Option C text" },
-        { "label": "D", "option": "Option D text" }
-      ],
-      "correctAnswer": "A",
-      "explanation": "Brief explanation why A is correct"
+        source = "topic_fallback";
+        sourceNote = "Your PDF couldn't be read, so these questions are based on the topic only — not on your document.";
+      }
     }
-  ]
-}`;
 
-                const content = await groqChat(aiPrompt, { temperature: 0.4, json: true, timeout: 20000 });
-                const parsed = JSON.parse(content || "{}");
-                const rawList = extractQuestions(parsed);
-                ques = normalizeQuestions(rawList);
-            }
+    if (pdf) {
+      stage = "upload";
+      const buffer = Buffer.from(await pdf.arrayBuffer());
+      const invalid = validatePdf(pdf, buffer);
+      if (invalid) return fail(400, "INVALID_PDF", invalid);
+      key = `pdf/${safeKeySegment(session.uid, "student")}/${Date.now()}/-${safeKeySegment(pdf.name, "document.pdf")}`;
+      try {
+        await s3.send(new PutObjectCommand({ Bucket: process.env.AWS_S3_BUCKET, Key: key, Body: buffer, ContentType: "application/pdf" }));
+      } catch (e: any) {
+        console.error("Quiz PDF upload failed:", e?.message);
+        return fail(502, "UPLOAD_FAILED", "Your PDF couldn't be stored, so no quiz was made. Please try again.", { stage, retryable: true });
+      }
+
+      stage = "document_questions";
+      try {
+        rawList = await documentQuestions(key, topic || "the key ideas in this document", count, difficulty);
+      } catch (e: any) {
+        console.error("Document quiz generation failed:", e?.code || e?.message);
+        if (!allowTopicFallback || !topic) {
+          // Tell the student plainly; offer the fallback instead of silently switching to it.
+          return fail(502, "DOCUMENT_QUIZ_FAILED", "We couldn't read your PDF to write questions from it, so no quiz was made.", {
+            stage,
+            retryable: true,
+            fallbackAvailable: !!topic,
+          });
         }
-
-        if (ques.length === 0) {
-            // Default fallback if AI response was empty
-            ques = [
-                {
-                    questionText: `What is the primary topic of: "${prompt}"?`,
-                    answers: [
-                        { label: "A", option: "Core Fundamentals & Theory" },
-                        { label: "B", option: "Applied Practical Execution" },
-                        { label: "C", option: "Advanced Research Concepts" },
-                        { label: "D", option: "Historical Evolution" }
-                    ],
-                    correctAnswer: "A",
-                    choosenAnswer: "",
-                    explanation: "Fundamental knowledge is the foundation of the subject."
-                }
-            ];
-        }
-
-        console.log("Successfully prepared questions count:", ques.length);
-
-        const quiz = await Quiz.create({
-            userId: userID,
-            title: prompt || "AssistIQ Live Arena Quiz",
-            s3PdfKey: key,
-            questions: ques,
-        });
-
-        return NextResponse.json({ message: "done", "quiz": quiz }, { status: 200 });
-
-    } catch (err: any) {
-        console.error("Quiz generate error:", err?.message);
-        return NextResponse.json({ "message": "Quiz generation failed." }, { status: 500 });
+        source = "topic_fallback";
+        sourceNote = "Your PDF couldn't be read, so these questions are based on the topic only — not on your document.";
+      }
     }
+
+    if (source !== "document") {
+      stage = "topic_questions";
+      try {
+        rawList = await topicQuestions(topic, count, difficulty);
+      } catch (e: any) {
+        console.error("Topic quiz generation failed:", e?.message);
+        return fail(502, "AI_FAILED", "The AI service didn't respond, so no quiz was made. Please try again.", { stage, retryable: true });
+      }
+    }
+
+    stage = "validate";
+    const { questions, dropped } = validateQuestions(rawList, count);
+    if (questions.length === 0) {
+      return fail(502, "NO_VALID_QUESTIONS", "The AI didn't return any usable questions (each needs a question, options and a real answer key). Please try again.", {
+        stage,
+        retryable: true,
+        dropped: dropped.length,
+      });
+    }
+
+    stage = "save";
+    await connectDB();
+    const quiz = await Quiz.create({
+      userId: safeKeySegment(session.uid, "student"),
+      ownerId: session.uid,
+      title: topic || pdf?.name?.replace(/\.pdf$/i, "") || "Quiz",
+      s3PdfKey: key,
+      source,
+      sourceNote,
+      documentId: documentId && !pdf ? String(documentId) : null,
+      questions: questions.map((q) => ({ ...q, topic: q.topic || topic.slice(0, 60) || "General" })),
+    });
+
+    return NextResponse.json(
+      {
+        message: "done",
+        quiz: { _id: String(quiz._id), title: quiz.title, source, sourceNote, questionCount: questions.length },
+        requested: count,
+        dropped: dropped.length,
+      },
+      { status: 200 }
+    );
+  } catch (err: any) {
+    console.error(`Quiz generate error at ${stage}:`, err?.message);
+    return fail(500, "UNEXPECTED", "Something went wrong while making your quiz. Please try again.", { stage, retryable: true });
+  }
 }

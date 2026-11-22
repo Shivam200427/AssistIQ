@@ -55,7 +55,7 @@ const AboutUs = () => {
           <div className="flex flex-col items-center p-3.5 rounded-xl bg-black/40 border border-[#0ea5e9]/20">
             <Sparkles size={20} className="text-[#38bdf8] mb-1.5" />
             <p className="text-xs font-bold text-gray-200">Zero Bloat</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">3 Core Arsenals</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">4 study tools</p>
           </div>
           <div className="flex flex-col items-center p-3.5 rounded-xl bg-black/40 border border-[#0ea5e9]/20">
             <Target size={20} className="text-[#38bdf8] mb-1.5" />

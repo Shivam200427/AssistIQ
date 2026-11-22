@@ -5,7 +5,7 @@ import axios from "axios";
 import ConceptMapGraph from "../map";
 import { GitFork } from "lucide-react";
 
-export default function ConceptMap({ persist_dir }: { persist_dir: string }) {
+export default function ConceptMap({ persist_dir }: { persist_dir: string; documentId?: string }) {
   const [map, setMap] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 

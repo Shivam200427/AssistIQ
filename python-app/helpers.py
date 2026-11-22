@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 import textwrap
 import shutil
 from openrouter_client import prompt_completion
-from utils import process_pdf_rag
 
 load_dotenv()
 
@@ -167,100 +166,39 @@ def is_valid_pdf_key(key):
 
 
 
-def format_fallback_notes(transcript: str) -> str:
-    """Format raw transcript into clean structured notes if LLM is temporarily unreachable."""
-    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', transcript) if s.strip()]
-    if not sentences:
-        return transcript or "No transcript content available."
+def get_links(pages, source_key=None):
+    """
+    Builds everything for an uploaded PDF:
+      1. indexes the ORIGINAL page text (page-tagged chunks) — this is what PDF chat searches;
+      2. writes study notes separately from that index, citing pages;
+      3. stores the notes PDF and the index in S3.
+    Returns S3 keys (so fresh links can be generated later) plus a short-lived link for immediate use.
+    """
+    from rag import build_page_index, notes_from_index, open_store
 
-    paragraphs = []
-    chunk_size = 4
-    for i in range(0, len(sentences), chunk_size):
-        chunk = sentences[i:i + chunk_size]
-        paragraphs.append(" ".join(chunk))
-
-    notes = "# Lecture Study Notes\n\n## Overview\n"
-    if paragraphs:
-        notes += paragraphs[0] + "\n\n"
-
-    notes += "## Key Concepts & Details\n"
-    for idx, p in enumerate(paragraphs[1:], 1):
-        notes += f"### Section {idx}\n- {p}\n\n"
-
-    notes += "## Summary & Review\n"
-    notes += "Key takeaway: Review the concepts discussed above for study and revision.\n"
-    return notes
-
-
-def genrate_notes(text):
-    prompt = f"""
-Generate well-structured study notes from the given text.
-
-### Requirements:
-- Keep meaning accurate.
-- Use simple, easy language.
-- Use **headings, bullet points, and short paragraphs**.
-- Correct grammar and spelling.
-- Make it visually clean and easy to revise.
-- and this is not summarize notes it is long notes so make accordingly
-### Text to summarise:
-{text}
-
-### Output:
-Return **only the improved notes**, no explanation or extra comments .
-"""
     try:
-        notes = prompt_completion(prompt, temperature=0.7)
-        if notes and notes.strip():
-            return notes
-    except Exception as e:
-        print(f"[genrate_notes] LLM note generation failed ({e}). Using structured transcript fallback.")
-
-    return format_fallback_notes(text)
-
-
-
-
-
-
-def get_links(text):
-    try:
-        print("[get_links] Generating notes via LLM...")
-        text = genrate_notes(text)
-        if not text or not text.strip():
-            raise RuntimeError("LLM returned empty notes content.")
-        print(f"[get_links] Notes generated ({len(text)} chars). Converting to PDF...")
-
-        pdf_bytes = text_to_pdf_buffer(text)
-        BUCKET_NAME = os.getenv("AWS_S3_BUCKET")
-        if not BUCKET_NAME:
-            raise RuntimeError("AWS_S3_BUCKET is not set in environment.")
-
-        print("[get_links] Uploading PDF to S3...")
-        pdf_url = upload_pdf_to_s3(pdf_bytes, BUCKET_NAME)
-
-        os.makedirs("./uploadfiles", exist_ok=True)
-        tmp_pdf_path = f"./uploadfiles/{uuid.uuid4()}.pdf"
-        with open(tmp_pdf_path, "wb") as f:
-            f.write(pdf_bytes)
-
+        bucket = get_bucket()
         persist_dir = f"./vectorstores/{uuid.uuid4()}"
-        print(f"[get_links] Building vector store at {persist_dir}...")
-        process_pdf_rag(tmp_pdf_path, persist_dir)
+        print(f"[get_links] Indexing {len(pages)} original page(s) at {persist_dir}...")
+        chunks = build_page_index(pages, persist_dir)
 
-        print("[get_links] Uploading vector store to S3...")
-        vectorstore_uri = upload_vectorstore_to_s3(persist_dir, BUCKET_NAME)
+        store, _ = open_store(persist_dir)
+        notes, notes_status = notes_from_index(store)
 
-        os.remove(tmp_pdf_path)
+        notes_key = f"pdfs/{uuid.uuid4()}.pdf"
+        pdf_url = upload_pdf_to_s3(text_to_pdf_buffer(notes), bucket, notes_key)
+        upload_vectorstore_to_s3(persist_dir, bucket)
 
-        print("[get_links] Done successfully.")
         return {
             "pdf_url": pdf_url,
+            "notes_key": notes_key,
+            "source_key": source_key,
             "vectorstore": persist_dir,
+            "notes_status": notes_status,  # "ai" or "extracted_text" (AI unavailable — clearly labelled)
+            "pages": len(pages),
+            "chunks": chunks,
         }
-
     except Exception as e:
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
-    

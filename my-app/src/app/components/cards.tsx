@@ -68,12 +68,6 @@ const FeatureCard = () => {
                     {/* Blue gradient vignette over the art */}
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0d1527] via-transparent to-transparent opacity-80" />
 
-                    {/* Street Name Sticker Stamp in Image */}
-                    <div className="absolute bottom-3 left-3 right-3 flex justify-between items-end">
-                      <span className="font-tag text-lg sm:text-xl text-white spray-glow transform -rotate-1 bg-[#070a12]/85 backdrop-blur-md px-3 py-1 rounded-xl border border-[#0ea5e9]/40">
-                        ✦ {feat.streetName}
-                      </span>
-                    </div>
                   </div>
 
                   {/* Title & Description */}
@@ -103,11 +97,11 @@ const FeatureCard = () => {
 
                 {/* Bottom Action Bar */}
                 <div className="mt-6 pt-4 border-t border-[#16243f] flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-gray-400 flex items-center gap-1.5 uppercase font-body">
-                    <Sparkles className="w-3.5 h-3.5 text-[#38bdf8]" /> ZERO BLOAT
+                  <span className="text-xs font-semibold text-gray-400 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-[#38bdf8]" /> {feat.badge}
                   </span>
-                  <span className="font-tag text-xs sm:text-sm text-[#38bdf8] group-hover:underline tracking-wider">
-                    SLAP TO LAUNCH →
+                  <span className="text-sm font-semibold text-[#38bdf8] group-hover:underline">
+                    Open {feat.name} →
                   </span>
                 </div>
               </div>

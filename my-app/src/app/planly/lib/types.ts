@@ -32,6 +32,7 @@ export interface Task {
   due: string | null; // YYYY-MM-DD
   difficulty: Difficulty;
   pinned: boolean;
+  link?: string | null; // e.g. the quiz to re-take for a spaced re-quiz task
   order: number;
   createdAt: number;
   completedAt: number | null;

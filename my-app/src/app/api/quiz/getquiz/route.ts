@@ -1,22 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
-import Quiz from "../../lib/Quiz";
-import { isValidObjectId } from "mongoose";
-import { connectDB } from "../../utils/db";
+import { NextRequest } from "next/server";
+import { getQuizForStudent } from "../attempts";
+import { withStudent } from "../guard";
 
-export async function POST(req:NextRequest){
-    try{
-        const {id} = await req.json();
-        if (typeof id !== "string" || !isValidObjectId(id)) {
-            return NextResponse.json({ "message": "Invalid quiz id" }, { status: 400 });
-        }
-        await connectDB();
-        const quiz =  await Quiz.findById(id);
-        if (!quiz) {
-            return NextResponse.json({ "message": "Quiz not found" }, { status: 404 });
-        }
-        return NextResponse.json({"quiz":quiz},{status:200});
-    }catch(err:any){
-        console.error("Get quiz error:", err?.message);
-        return NextResponse.json({ "message": "Could not load quiz" }, { status: 500 })
-    }
+export const dynamic = "force-dynamic";
+
+/** Returns the quiz plus the caller's own attempt. Correct answers only after the caller submits. */
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  return withStudent(req, (s) => getQuizForStudent(body?.id, s.uid));
 }

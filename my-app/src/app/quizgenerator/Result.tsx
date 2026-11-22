@@ -4,6 +4,8 @@ import axios from "axios";
 import Back from "../components/Back";
 import { CheckCircle, XCircle, RotateCcw, Award, Gamepad2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { addRevisionPlan } from "../planly/lib/revision";
 
 interface AnswerOption {
   label: string;
@@ -27,6 +29,8 @@ interface Quiz {
 
 const Result = ({ id }: { id: string }) => {
   const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [insights, setInsights] = useState<{ topics: { topic: string; correct: number; total: number; weak: boolean }[]; mistakes: number; nextReviewDays: number } | null>(null);
+  const [planStatus, setPlanStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [isHosting, setIsHosting] = useState(false);
   const router = useRouter();
@@ -57,6 +61,7 @@ const Result = ({ id }: { id: string }) => {
         const res = await axios.post("/api/quiz/getquiz", { id });
         if (res.data?.quiz) {
           setQuiz(res.data.quiz);
+          setInsights(res.data.insights || null);
         }
       } catch (err) {
         console.error("Result fetch error:", err);
@@ -155,23 +160,89 @@ const Result = ({ id }: { id: string }) => {
             </div>
 
             <button
-              onClick={() => router.push("/quizgenerator")}
-              className="mt-6 w-full bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-bold uppercase tracking-wider py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer font-tag shadow-[0_4px_20px_rgba(14,165,233,0.3)]"
+              onClick={async () => {
+                try {
+                  await axios.post("/api/quiz/retake", { quizid: quiz._id });
+                  window.location.reload();
+                } catch (err: any) {
+                  alert(err?.response?.data?.message || "Couldn't start a retake. Please try again.");
+                }
+              }}
+              className="mt-6 w-full bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-bold tracking-wide py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_4px_20px_rgba(14,165,233,0.3)]"
             >
               <RotateCcw className="w-4 h-4" />
-              <span>RETAKE / NEW QUIZ</span>
+              <span>Retake this quiz</span>
+            </button>
+            <button
+              onClick={() => router.push("/quizgenerator")}
+              className="mt-3 w-full border border-[#16243f] text-gray-300 hover:text-white font-semibold py-2.5 rounded-xl text-sm transition-all cursor-pointer"
+            >
+              Make a new quiz
             </button>
 
             <button
               onClick={handleHostLive}
               disabled={isHosting}
-              className="mt-3 w-full bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/40 text-[#38bdf8] font-bold uppercase tracking-wider py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer font-tag shadow-[0_4px_20px_rgba(14,165,233,0.2)] disabled:opacity-50"
+              className="mt-3 w-full bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/40 text-[#38bdf8] font-bold uppercase tracking-wider py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_4px_20px_rgba(14,165,233,0.2)] disabled:opacity-50"
             >
               <Gamepad2 className="w-4 h-4" />
               <span>{isHosting ? "LAUNCHING..." : "✦ HOST MULTIPLAYER ARENA ✦"}</span>
             </button>
           </div>
         </div>
+
+        {/* Learning loop: weak topics -> revision tasks -> spaced re-quiz */}
+        {insights && (
+          <div className="mb-10 rounded-3xl border border-[#16243f] bg-[#0d1527] p-6">
+            <h2 className="text-lg font-bold text-white">What to revise next</h2>
+            {insights.topics.filter((t) => t.weak).length === 0 ? (
+              <p className="mt-2 text-sm text-emerald-300">No weak topics this time — nice work.</p>
+            ) : (
+              <ul className="mt-3 flex flex-wrap gap-2">
+                {insights.topics.filter((t) => t.weak).map((t) => (
+                  <li key={t.topic} className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 text-sm text-amber-200">
+                    {t.topic} · {t.correct}/{t.total}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-3 text-sm text-gray-400">
+              Next re-quiz suggested in <strong className="text-white">{insights.nextReviewDays} day{insights.nextReviewDays === 1 ? "" : "s"}</strong> (spaced review).
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  const res = addRevisionPlan({
+                    quizId: quiz._id,
+                    quizTitle: quiz.title || "Quiz",
+                    weakTopics: insights.topics.filter((t) => t.weak).map((t) => t.topic),
+                    nextReviewDays: insights.nextReviewDays,
+                    documentId: (quiz as any).documentId,
+                  });
+                  setPlanStatus(`Added ${res.added} task${res.added === 1 ? "" : "s"} to your Study Planner.`);
+                }}
+                className="rounded-xl bg-[#38bdf8] px-4 py-2.5 text-sm font-bold text-[#070a12] hover:bg-[#7dd3fc] cursor-pointer"
+              >
+                Add revision plan to Study Planner
+              </button>
+              {insights.mistakes > 0 && (
+                <Link href="/quizgenerator/mistakes" className="rounded-xl border border-[#16243f] px-4 py-2.5 text-sm font-semibold text-gray-200 hover:border-[#38bdf8]/60">
+                  Mistakes notebook ({insights.mistakes} here)
+                </Link>
+              )}
+              {(quiz as any).documentId && (
+                <Link href={`/pdfNotesExtractor?doc=${(quiz as any).documentId}`} className="rounded-xl border border-[#16243f] px-4 py-2.5 text-sm font-semibold text-gray-200 hover:border-[#38bdf8]/60">
+                  Review in your PDF
+                </Link>
+              )}
+            </div>
+            {planStatus && (
+              <p role="status" className="mt-3 text-sm text-emerald-300">
+                {planStatus} <Link href="/planly#tasks" className="underline">Open Study Planner</Link>
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Detailed Question Review */}
         <div className="flex flex-col gap-6">

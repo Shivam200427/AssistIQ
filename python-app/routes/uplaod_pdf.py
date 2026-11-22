@@ -1,6 +1,7 @@
 from flask import request, jsonify, Blueprint
 from ocr import extract_pdf
-from helpers import clean_content, get_links, get_bucket, is_valid_pdf_key
+from helpers import get_links, get_bucket, is_valid_pdf_key
+from rag import pages_from_extract
 
 uplaodpdf = Blueprint('uplaodpdf', __name__)
 
@@ -13,12 +14,13 @@ def upload_pdf():
         if not is_valid_pdf_key(key):
             return jsonify({"error": "Invalid document key"}), 400
 
-        content = extract_pdf(get_bucket(), key)
-        content = clean_content(content)
+        pages = pages_from_extract(extract_pdf(get_bucket(), key))
+        if not pages:
+            return jsonify({"error": "No readable text was found in this PDF.", "stage": "extract"}), 422
 
-        pdf_link = get_links(content)
+        pdf_link = get_links(pages, source_key=key)
         if pdf_link.get("error"):
-            return jsonify({"error": "Could not generate notes from this PDF"}), 500
+            return jsonify({"error": "Could not build notes and the search index for this PDF.", "stage": "index"}), 500
 
         return jsonify({"pdflink": pdf_link}), 200
     except Exception as e:

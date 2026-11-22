@@ -3,12 +3,19 @@ import axios from "axios";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { Paintbrush, Sparkles, LogIn } from "lucide-react";
+import { Paintbrush, LogIn, Menu, X, BookOpen, CircleHelp, Mail, LayoutDashboard } from "lucide-react";
 
 const Navbar = () => {
   const [authorized, setAuthorized] = useState<boolean>(false);
   const [activeSection, setActiveSection] = useState("home");
   const [manualActive, setManualActive] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const tools = [
+    { href: "/pdfNotesExtractor", label: "PDF Notes", icon: BookOpen },
+    { href: "/quizgenerator", label: "Quiz Generator", icon: CircleHelp },
+    { href: "/EmailSummarizer", label: "Email Summary", icon: Mail },
+    { href: "/planly", label: "Study Planner", icon: LayoutDashboard },
+  ];
 
   const sections = ["home", "features", "about", "contact"];
   const router = useRouter();
@@ -92,19 +99,19 @@ const Navbar = () => {
           <span className="font-tag text-2xl md:text-3xl text-[#38bdf8] spray-glow tracking-wider transform -rotate-1">
             AssistIQ
           </span>
-          <span className="hidden sm:inline-block px-2 py-0.5 text-[9px] uppercase font-bold tracking-widest bg-[#0ea5e9]/20 text-[#38bdf8] border border-[#0ea5e9]/40 rounded-full font-stencil">
+          <span className="hidden xl:inline-block px-2 py-0.5 text-[9px] uppercase font-bold tracking-widest bg-[#0ea5e9]/20 text-[#38bdf8] border border-[#0ea5e9]/40 rounded-full font-stencil">
             STREET ED.
           </span>
         </div>
       </div>
 
       {/* Navigation Sections */}
-      <div className="hidden md:flex flex-row gap-8 font-medium text-sm lg:text-base">
+      <div className="hidden lg:flex flex-row gap-6 xl:gap-8 font-medium text-sm xl:text-base">
         {sections.map((sec) => (
           <div
             key={sec}
             onClick={() => handleClick(sec)}
-            className={`relative cursor-pointer uppercase tracking-wider transition-colors py-1 ${
+            className={`relative cursor-pointer uppercase tracking-wider whitespace-nowrap transition-colors py-1 ${
               activeSection === sec ? "text-[#38bdf8] font-bold" : "text-gray-400 hover:text-white"
             }`}
           >
@@ -120,24 +127,34 @@ const Navbar = () => {
         ))}
         <div
           onClick={() => router.push("/planly")}
-          className="relative cursor-pointer uppercase tracking-wider transition-colors py-1 text-gray-400 hover:text-white"
+          className="relative cursor-pointer uppercase tracking-wider whitespace-nowrap transition-colors py-1 text-gray-400 hover:text-white"
         >
-          planly
+          Study Planner
         </div>
       </div>
 
       {/* Auth Action Button: Simple "Connect" */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Below desktop width: compact tools menu (the full links don't fit) */}
+        <button
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-expanded={menuOpen}
+          aria-controls="site-tools-menu"
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          className="lg:hidden rounded-xl border border-[#0ea5e9]/40 p-2 text-[#38bdf8] cursor-pointer"
+        >
+          {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
         {authorized ? (
           <button
-            className="border border-[#0ea5e9] bg-[#0ea5e9]/15 text-[#38bdf8] hover:bg-[#0ea5e9] hover:text-[#070a12] font-bold uppercase text-xs md:text-sm px-4 py-2 rounded-xl transition-all duration-200 shadow-[0_0_15px_rgba(14,165,233,0.2)] hover:shadow-[0_0_25px_#0ea5e9] cursor-pointer font-tag"
+            className="border border-[#0ea5e9] bg-[#0ea5e9]/15 text-[#38bdf8] hover:bg-[#0ea5e9] hover:text-[#070a12] font-bold uppercase text-xs md:text-sm px-4 py-2 rounded-xl transition-all duration-200 shadow-[0_0_15px_rgba(14,165,233,0.2)] hover:shadow-[0_0_25px_#0ea5e9] cursor-pointer"
             onClick={handleLogout}
           >
             Logout
           </button>
         ) : (
           <button
-            className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] text-[#070a12] hover:from-[#7dd3fc] hover:to-[#38bdf8] font-black tracking-wide text-xs md:text-sm px-5 py-2.5 rounded-xl transition-all duration-200 shadow-[0_4px_20px_rgba(14,165,233,0.4)] flex items-center gap-2 cursor-pointer border border-[#38bdf8]/40 font-tag uppercase"
+            className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] text-[#070a12] hover:from-[#7dd3fc] hover:to-[#38bdf8] font-black tracking-wide text-xs md:text-sm px-5 py-2.5 rounded-xl transition-all duration-200 shadow-[0_4px_20px_rgba(14,165,233,0.4)] flex items-center gap-2 cursor-pointer border border-[#38bdf8]/40 uppercase"
             onClick={handleLogin}
           >
             <LogIn className="w-4 h-4" />
@@ -145,6 +162,28 @@ const Navbar = () => {
           </button>
         )}
       </div>
+
+      {menuOpen && (
+        <div id="site-tools-menu" className="lg:hidden absolute left-0 right-0 top-full border-b border-[#0ea5e9]/25 bg-[#070a12]/98 px-4 py-3 shadow-2xl">
+          <div className="grid grid-cols-2 gap-2">
+            {tools.map((t) => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.href}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    router.push(t.href);
+                  }}
+                  className="flex items-center gap-2 rounded-xl border border-[#16243f] bg-[#0d1527] px-3 py-3 text-sm font-semibold text-gray-100 hover:border-[#38bdf8]/60 cursor-pointer"
+                >
+                  <Icon className="w-4 h-4 text-[#38bdf8]" /> {t.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </nav>
   );
 };

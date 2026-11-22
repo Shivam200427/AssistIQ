@@ -28,7 +28,8 @@ OUTPUT INSTRUCTIONS:
   ],
   "correctAnswer": "A/B/C/D only",
   "choosenAnswer": "",
-  "explanation": "string - short explanation"
+  "explanation": "string - short explanation",
+  "topic": "string - the 2-4 word concept this question tests"
 }}
 
 RESPONSE FORMAT:

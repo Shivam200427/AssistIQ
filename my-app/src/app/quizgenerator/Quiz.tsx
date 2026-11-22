@@ -21,6 +21,8 @@ interface Question {
 }
 
 interface Quiz {
+  source?: "document" | "topic" | "topic_fallback";
+  sourceNote?: string;
   createdAt: string;
   questions: Question[];
   s3PdfKey: string;
@@ -30,12 +32,17 @@ interface Quiz {
   _id: string;
 }
 
-const Quiz = ({ quiz }: { quiz: Quiz }) => {
+const Quiz = ({ quiz, attempt }: { quiz: Quiz; attempt?: { status: string } | null }) => {
   const router = useRouter();
-  const [selectedOptions, setSelectedOptions] = useState<{ [key: string]: string }>({});
+  // Start from this student's own saved answers (returned by the server for the signed-in student only).
+  const [selectedOptions, setSelectedOptions] = useState<{ [key: string]: string }>(() =>
+    Object.fromEntries((quiz?.questions || []).filter((q) => q.choosenAnswer).map((q) => [q._id, q.choosenAnswer]))
+  );
   const [quizid, setquizid] = useState<string>();
-  const [submitquiz, setsubmitquiz] = useState(false);
+  const [submitquiz, setsubmitquiz] = useState(attempt?.status === "submitted");
   const [isHosting, setIsHosting] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (quiz) {
@@ -70,8 +77,22 @@ const Quiz = ({ quiz }: { quiz: Quiz }) => {
 
     try {
       await axios.post('/api/quiz/selectoption', { questionId, quizid, choosenAnswer });
-    } catch (err) {
+      setSaveError("");
+    } catch (err: any) {
       console.error("Option select error:", err);
+      setSaveError(err?.response?.data?.message || "Couldn't save that answer. Check your connection and pick it again.");
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      setSubmitting(true);
+      await axios.post("/api/quiz/submit", { quizid: quiz._id });
+      setsubmitquiz(true);
+    } catch (err: any) {
+      setSaveError(err?.response?.data?.message || "Couldn't submit your answers. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -90,7 +111,7 @@ const Quiz = ({ quiz }: { quiz: Quiz }) => {
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] hover:from-[#7dd3fc] hover:to-[#38bdf8] px-6 py-2.5 rounded-xl text-[#070a12] font-bold uppercase tracking-wider text-xs cursor-pointer font-tag"
+            className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] hover:from-[#7dd3fc] hover:to-[#38bdf8] px-6 py-2.5 rounded-xl text-[#070a12] font-bold uppercase tracking-wider text-xs cursor-pointer"
           >
             TRY AGAIN // RESET
           </button>
@@ -116,16 +137,19 @@ const Quiz = ({ quiz }: { quiz: Quiz }) => {
             <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
               {quiz.title || "Interactive Assessment"}
             </h1>
+            <p className="mt-1 text-xs text-gray-400">
+              {quiz.source === "document" ? "Questions written from your PDF." : quiz.source === "topic_fallback" ? "Topic-only fallback quiz." : "Questions written from the topic."}
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={handleHostQuiz}
               disabled={isHosting}
-              className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-black uppercase tracking-wider px-5 py-2.5 rounded-xl text-xs transition-all flex items-center gap-2 cursor-pointer font-tag shadow-[0_0_15px_rgba(14,165,233,0.4)] disabled:opacity-50"
+              className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-black uppercase tracking-wider px-5 py-2.5 rounded-xl text-xs transition-all flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(14,165,233,0.4)] disabled:opacity-50"
             >
               <Gamepad2 className="w-4 h-4" />
-              <span>{isHosting ? "LAUNCHING..." : "✦ HOST LIVE ARENA ✦"}</span>
+              <span>{isHosting ? "Starting…" : "Host as live quiz"}</span>
             </button>
 
             <div className="flex items-center gap-3 bg-[#0d1527] border border-[#16243f] px-4 py-2.5 rounded-xl text-xs font-tag">
@@ -136,6 +160,12 @@ const Quiz = ({ quiz }: { quiz: Quiz }) => {
             </div>
           </div>
         </div>
+
+        {quiz.source === "topic_fallback" && (
+          <div role="status" className="mb-6 rounded-2xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
+            <strong>Fallback quiz:</strong> {quiz.sourceNote || "These questions are based on the topic only, not on your document."}
+          </div>
+        )}
 
         {/* Questions List */}
         <div className="flex flex-col gap-6">
@@ -189,14 +219,21 @@ const Quiz = ({ quiz }: { quiz: Quiz }) => {
           })}
         </div>
 
+        {saveError && (
+          <div role="alert" className="mt-6 rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            {saveError}
+          </div>
+        )}
+
         {/* Submit Action Bar */}
         <div className="mt-10 flex justify-center sticky bottom-6 z-40">
           <button
-            onClick={() => setsubmitquiz(true)}
-            className="w-full sm:w-auto min-w-[280px] bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-extrabold uppercase tracking-wider py-4 px-10 rounded-2xl shadow-[0_4px_30px_rgba(14,165,233,0.45)] text-sm sm:text-base transition-all duration-200 cursor-pointer flex items-center justify-center gap-3 font-tag"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="w-full sm:w-auto min-w-[280px] bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-extrabold uppercase tracking-wider py-4 px-10 rounded-2xl shadow-[0_4px_30px_rgba(14,165,233,0.45)] text-sm sm:text-base transition-all duration-200 cursor-pointer flex items-center justify-center gap-3"
           >
             <CheckCircle2 className="w-5 h-5" />
-            <span>SUBMIT ASSESSMENT // GET SCORE</span>
+            <span>{submitting ? "Submitting…" : "Submit answers & see score"}</span>
           </button>
         </div>
       </div>

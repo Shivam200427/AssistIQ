@@ -46,19 +46,23 @@ function JoinForm() {
       // Verify room exists
       const res = await axios.get(`/api/livequiz/${cleanPin}/state`);
       if (res.data?.success) {
-        // Store player info in sessionStorage
-        const playerId = `p-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-        sessionStorage.setItem("livequiz_player_id", playerId);
+        // Rejoining the same game from this tab reuses this player's private token.
+        const sameGame = sessionStorage.getItem("livequiz_player_pin") === cleanPin;
+        const knownId = sameGame ? sessionStorage.getItem("livequiz_player_id") : null;
+        const knownToken = sameGame ? sessionStorage.getItem("livequiz_player_token") : null;
+
+        const joinRes = await axios.post(
+          `/api/livequiz/${cleanPin}/action`,
+          { action: "JOIN", id: knownId || undefined, nickname: cleanNick, avatar: selectedAvatar },
+          { headers: knownToken ? { "x-player-token": knownToken } : undefined }
+        );
+
+        // The server assigns the player id and a private token that proves it's really you.
+        sessionStorage.setItem("livequiz_player_pin", cleanPin);
+        sessionStorage.setItem("livequiz_player_id", joinRes.data.playerId);
+        if (joinRes.data.playerToken) sessionStorage.setItem("livequiz_player_token", joinRes.data.playerToken);
         sessionStorage.setItem("livequiz_player_nickname", cleanNick);
         sessionStorage.setItem("livequiz_player_avatar", selectedAvatar);
-
-        // Join room
-        await axios.post(`/api/livequiz/${cleanPin}/action`, {
-          action: "JOIN",
-          id: playerId,
-          nickname: cleanNick,
-          avatar: selectedAvatar,
-        });
 
         router.push(`/quizgenerator/arena/${cleanPin}`);
       }
@@ -152,7 +156,7 @@ function JoinForm() {
           <button
             type="submit"
             disabled={loading}
-            className="mt-2 w-full bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-black text-sm py-3.5 rounded-2xl transition-all shadow-[0_0_20px_rgba(14,165,233,0.4)] flex items-center justify-center gap-2 cursor-pointer font-tag disabled:opacity-50"
+            className="mt-2 w-full bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-black text-sm py-3.5 rounded-2xl transition-all shadow-[0_0_20px_rgba(14,165,233,0.4)] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             {loading ? (
               <div className="w-5 h-5 border-2 border-[#070a12] border-t-transparent rounded-full animate-spin" />

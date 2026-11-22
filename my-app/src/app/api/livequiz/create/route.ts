@@ -4,6 +4,7 @@ import { isValidObjectId } from "mongoose";
 import { createRoom, roomExists, viewRoom, LiveQuestion } from "../engine";
 import Quiz from "../../lib/Quiz";
 import { connectDB } from "../../utils/db";
+import { getSession } from "../../utils/session";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,11 @@ export async function POST(req: NextRequest) {
       }
       await connectDB();
       const quiz = await Quiz.findById(quizId);
+      // Hosting reveals the answer key to the host, so only the quiz's creator may host it.
+      // Legacy quizzes (no ownerId) were public before ownership existed and stay hostable.
+      if (quiz?.ownerId && quiz.ownerId !== getSession(req)?.uid) {
+        return NextResponse.json({ error: "Only the student who created this quiz can host it live." }, { status: 403 });
+      }
       if (quiz) {
         gameTitle = quiz.title || gameTitle;
         questions = (quiz.questions || []).map((q: any, idx: number) => ({

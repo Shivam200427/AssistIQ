@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from "crypto";
+import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import LiveGame from "../lib/LiveGame";
 import { connectDB } from "../utils/db";
 
@@ -44,6 +44,8 @@ export interface LivePlayer {
   lastAnswer: PlayerAnswer | null;
   answersHistory: PlayerAnswer[];
   joinedAt: number;
+  /** SHA-256 of the player's private token. Never sent to any client. */
+  tokenHash?: string;
 }
 
 export type GameStatus = "LOBBY" | "QUESTION_ACTIVE" | "QUESTION_RESULT" | "LEADERBOARD" | "FINISHED";
@@ -89,6 +91,16 @@ export function generateHostToken(): string {
   return randomBytes(24).toString("hex");
 }
 
+const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+
+/** Checks a player's private token against the stored hash (constant-time). */
+export function isPlayerTokenValid(player: LivePlayer | undefined, token: unknown): boolean {
+  if (!player?.tokenHash || typeof token !== "string" || !token) return false;
+  const a = Buffer.from(player.tokenHash);
+  const b = Buffer.from(hashToken(token));
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export function isHostTokenValid(room: RoomState | null, token: unknown): boolean {
   if (!room || !room.hostToken || typeof token !== "string" || !token) return false;
   const a = Buffer.from(room.hostToken);
@@ -121,7 +133,9 @@ function trailingStreak(history: PlayerAnswer[]): number {
  */
 export function viewRoom(room: RoomState | null, asHost = false): PublicRoomState | null {
   if (!room) return null;
-  const { hostToken: _hostToken, ...rest } = room;
+  const { hostToken: _hostToken, ...withPlayers } = room;
+  // Player token hashes are never sent to anyone, including the host.
+  const rest = { ...withPlayers, players: room.players.map(({ tokenHash: _t, ...p }) => p) };
   if (asHost) return rest;
 
   const hideCurrent = room.status === "QUESTION_ACTIVE";
@@ -132,7 +146,7 @@ export function viewRoom(room: RoomState | null, asHost = false): PublicRoomStat
     questions: room.questions.map((q, idx) =>
       isQuestionRevealed(room, idx) ? q : { ...q, correctAnswer: "", explanation: "" }
     ),
-    players: room.players.map((p) => {
+    players: rest.players.map((p) => {
       if (!hideCurrent) return p;
       const history = p.answersHistory.filter((a) => a.questionIndex !== currentIdx);
       const current = p.answersHistory.find((a) => a.questionIndex === currentIdx);
@@ -221,6 +235,7 @@ function docToRoom(doc: any): RoomState | null {
     lastAnswer: p.lastAnswer || null,
     answersHistory: p.answersHistory || [],
     joinedAt: toTime(p.joinedAt) || 0,
+    tokenHash: p.tokenHash || undefined,
   }));
   if (status === "LEADERBOARD" || status === "FINISHED") {
     players.sort((a, b) => b.score - a.score);
@@ -330,49 +345,76 @@ export async function createRoom(params: {
   return docToRoom(doc.toObject())!;
 }
 
-export async function joinPlayer(pin: string, player: { id: string; nickname: string; avatar: string }): Promise<RoomState | null> {
+export type JoinResult =
+  | { ok: true; room: RoomState; playerId: string; playerToken?: string }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Joins a player. A brand-new player gets a server-generated id and a private token (returned once).
+ * Rejoining with an existing player id requires that player's token — so nobody can take over another
+ * player's identity, in the lobby or mid-game.
+ */
+export async function joinPlayer(
+  pin: string,
+  player: { id?: string; nickname: string; avatar: string; token?: string }
+): Promise<JoinResult> {
   const nickname = String(player.nickname || "").trim().slice(0, MAX_NICKNAME_LENGTH);
   const avatar = String(player.avatar || "⚡").slice(0, 8);
-  const id = String(player.id || "").slice(0, 64);
-  if (!nickname || !id) return null;
+  if (!nickname) return { ok: false, status: 400, error: "Nickname is required" };
 
-  // Rejoining (same id) only updates the display name/avatar.
-  let room = await atomicUpdate(
-    pin,
-    { "players.id": id },
-    { $set: { "players.$.nickname": nickname, "players.$.avatar": avatar } }
-  );
+  const current = await getRoom(pin);
+  if (!current) return { ok: false, status: 404, error: "Game room not found" };
 
-  if (!room) {
-    room = await atomicUpdate(
+  const requestedId = typeof player.id === "string" ? player.id.slice(0, 64) : "";
+  const existing = requestedId ? current.players.find((p) => p.id === requestedId) : undefined;
+
+  if (existing) {
+    if (!isPlayerTokenValid(existing, player.token)) {
+      return { ok: false, status: 403, error: "That player belongs to someone else. Join with a new nickname." };
+    }
+    const room = await atomicUpdate(
       pin,
-      { "players.id": { $ne: id }, [`players.${MAX_PLAYERS - 1}`]: { $exists: false } },
-      {
-        $push: {
-          players: {
-            id,
-            nickname,
-            avatar,
-            score: 0,
-            streak: 0,
-            lastAnswer: null,
-            answersHistory: [],
-            joinedAt: new Date(),
-          },
-        },
-      }
+      { "players.id": existing.id },
+      { $set: { "players.$.nickname": nickname, "players.$.avatar": avatar } }
     );
+    if (!room) return { ok: false, status: 409, error: "Could not rejoin, please try again." };
+    broadcastToRoom(room.pin, "ROOM_UPDATED", { room });
+    return { ok: true, room, playerId: existing.id };
   }
 
-  if (room) broadcastToRoom(room.pin, "ROOM_UPDATED", { room });
-  return room;
+  // New player: never trust a client-chosen id.
+  const id = `p-${randomBytes(9).toString("hex")}`;
+  const token = randomBytes(24).toString("hex");
+  const room = await atomicUpdate(
+    pin,
+    { [`players.${MAX_PLAYERS - 1}`]: { $exists: false } },
+    {
+      $push: {
+        players: {
+          id,
+          nickname,
+          avatar,
+          score: 0,
+          streak: 0,
+          lastAnswer: null,
+          answersHistory: [],
+          joinedAt: new Date(),
+          tokenHash: hashToken(token),
+        },
+      },
+    }
+  );
+  if (!room) return { ok: false, status: 409, error: "This game is full." };
+  broadcastToRoom(room.pin, "ROOM_UPDATED", { room });
+  return { ok: true, room, playerId: id, playerToken: token };
 }
 
 export async function submitAnswer(
   pin: string,
   playerId: string,
-  chosenOption: string
-): Promise<{ success: boolean; room: RoomState | null; answerResult?: PlayerAnswer }> {
+  chosenOption: string,
+  playerToken?: string
+): Promise<{ success: boolean; room: RoomState | null; answerResult?: PlayerAnswer; forbidden?: boolean }> {
   const room = await getRoom(pin);
   if (!room || room.status !== "QUESTION_ACTIVE") {
     return { success: false, room };
@@ -382,6 +424,8 @@ export async function submitAnswer(
   const player = room.players.find((p) => p.id === playerId);
   const currentQ = room.questions[questionIndex];
   if (!player || !currentQ) return { success: false, room };
+  // Only the real player (holder of the private token) can answer for this player id.
+  if (!isPlayerTokenValid(player, playerToken)) return { success: false, room, forbidden: true };
 
   if (player.answersHistory.some((a) => a.questionIndex === questionIndex)) {
     return { success: false, room };

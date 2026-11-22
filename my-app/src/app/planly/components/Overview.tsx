@@ -120,7 +120,11 @@ export default function Overview({ go }: { go: (tab: TabId) => void }) {
                       onChange={() => usePlanly.getState().updateTask(t.id, { status: "done" })}
                       aria-label={`Complete ${t.title}`}
                     />
-                    <span className="flex-1 truncate text-sm text-[var(--pl-text)]">{t.title}</span>
+                    {t.link ? (
+                      <a href={t.link} className="flex-1 truncate text-sm font-semibold text-[var(--pl-accent-ink)] hover:underline">{t.title}</a>
+                    ) : (
+                      <span className="flex-1 truncate text-sm text-[var(--pl-text)]">{t.title}</span>
+                    )}
                     {a && <Badge color={a.color}>{a.name}</Badge>}
                     {t.due && (
                       <span className={cx("flex items-center gap-1 text-xs", overdue ? "text-red-400" : "text-[var(--pl-muted)]")}>

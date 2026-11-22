@@ -72,7 +72,7 @@ const ContactUs = () => {
 
             <button
               type='submit'
-              className='w-full bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition-all shadow-[0_4px_20px_rgba(14,165,233,0.3)] flex items-center justify-center gap-2 cursor-pointer font-tag'
+              className='w-full bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition-all shadow-[0_4px_20px_rgba(14,165,233,0.3)] flex items-center justify-center gap-2 cursor-pointer'
             >
               <Send className='w-4 h-4' />
               <span>{submitted ? "MESSAGE SPRAYED!" : "SEND DISPATCH"}</span>

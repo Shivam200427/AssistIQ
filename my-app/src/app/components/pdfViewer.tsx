@@ -24,11 +24,28 @@ const pdffeature = [
 
 const PdfViewer = ({
   pdfurl,
-  initialPersistDir = ""
+  initialPersistDir = "",
+  documentId,
+  notesStatus,
 }: {
   pdfurl: string;
   initialPersistDir?: string;
+  documentId?: string;
+  notesStatus?: string | null;
 }) => {
+  // Links are short-lived; if the viewer can't load the file, fetch a fresh authorized link.
+  const [fileUrl, setFileUrl] = useState(pdfurl);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshLink = async () => {
+    if (!documentId) return;
+    setRefreshing(true);
+    try {
+      const res = await axios.get(`/api/documents/${documentId}/link`);
+      setFileUrl(res.data.url);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const selectionPlugin = selectionModePlugin();
   const [top, settop] = useState<Number | null>(null);
   const [left, setleft] = useState<Number | null>(null);
@@ -99,9 +116,30 @@ const PdfViewer = ({
               </span>
             </div>
 
+            {notesStatus === "extracted_text" && (
+              <div role="status" className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+                AI notes couldn&apos;t be generated, so this shows the text extracted from your PDF instead. Chat and quizzes still use your original pages.
+              </div>
+            )}
             <div className='w-full flex-1 overflow-y-auto p-2 custom-scroll relative rounded-2xl bg-black/60 border border-white/5' onMouseUp={handleSelect}>
               <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
-                {pdfurl && <Viewer fileUrl={pdfurl} plugins={[selectionPlugin]} />}
+                {fileUrl && (
+                  <Viewer
+                    key={fileUrl}
+                    fileUrl={fileUrl}
+                    plugins={[selectionPlugin]}
+                    renderError={() => (
+                      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-gray-300">
+                        <span>The notes file couldn&apos;t be loaded.</span>
+                        {documentId && (
+                          <button onClick={refreshLink} disabled={refreshing} className="rounded-xl bg-[#38bdf8] px-4 py-2 font-bold text-[#070a12] cursor-pointer disabled:opacity-50">
+                            {refreshing ? "Getting a fresh link…" : "Reload notes"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  />
+                )}
               </Worker>
 
               {selectedText !== "" && top !== null && left !== null && (
@@ -135,7 +173,7 @@ const PdfViewer = ({
               <div className="w-full h-full bg-[#0d1527] rounded-3xl p-6 sm:p-8 flex flex-col gap-5 border border-[#16243f]">
                 <div>
                   <span className="font-tag text-xs tracking-wider text-[#38bdf8] bg-[#0ea5e9]/15 px-3 py-1 rounded-full border border-[#0ea5e9]/30 uppercase inline-block mb-2">
-                    ✦ STUDY ARSENAL ✦
+                    ✦ Study tools ✦
                   </span>
                   <h2 className="text-2xl sm:text-3xl text-white font-extrabold tracking-tight">
                     Smart Study Suite
@@ -185,10 +223,10 @@ const PdfViewer = ({
             >
               <div className="w-full h-full bg-[#0d1527] rounded-3xl p-6 flex flex-col gap-3 border border-[#16243f]">
                 <button
-                  className="text-[#38bdf8] hover:text-white flex items-center gap-2 cursor-pointer text-xs font-tag tracking-wider mb-2"
+                  className="text-[#38bdf8] hover:text-white flex items-center gap-2 cursor-pointer text-xs tracking-wider mb-2"
                   onClick={() => setSelectedfeature(null)}
                 >
-                  <Undo2 size={16} /> [← BACK TO TOOLS LIST]
+                  <Undo2 size={16} /> ← Back to tools
                 </button>
 
                 {(() => {
@@ -205,7 +243,7 @@ const PdfViewer = ({
                         </h2>
                       </div>
                       <div className="flex-1 overflow-y-auto custom-scroll">
-                        <selectedItem.comp persist_dir={persit_dir} />
+                        <selectedItem.comp persist_dir={persit_dir} documentId={documentId} />
                       </div>
                     </div>
                   );

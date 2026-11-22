@@ -1,6 +1,7 @@
 import axios from "axios";
 import { randomBytes, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { createSessionToken, setSessionCookie, uidFromGraphProfile } from "../../utils/session";
 
 const client_id = process.env.MICROSOFT_CLIENT_ID!;
 const client_secret = process.env.MICROSOFT_CLIENT_SECRET!;
@@ -107,6 +108,24 @@ export async function GET(req: NextRequest) {
       maxAge: expires_in || 3600,
     });
     res.cookies.set(STATE_COOKIE, "", { maxAge: 0, path: "/api/auth" });
+
+    // Student identity: the Microsoft account id, kept in a signed session cookie.
+    try {
+      const me = await axios.get("https://graph.microsoft.com/v1.0/me", {
+        headers: { Authorization: `Bearer ${access_token}` },
+        timeout: 8000,
+      });
+      const uid = uidFromGraphProfile(me.data);
+      if (uid) {
+        setSessionCookie(
+          res,
+          createSessionToken({ uid, name: me.data.displayName, email: me.data.mail || me.data.userPrincipalName }),
+          secureCookies
+        );
+      }
+    } catch (e: any) {
+      console.error("Could not create student session:", e?.message);
+    }
 
     return res;
 

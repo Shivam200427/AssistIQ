@@ -40,12 +40,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pin
         if (!nickname || typeof nickname !== "string" || !nickname.trim()) {
           return NextResponse.json({ error: "Nickname is required" }, { status: 400 });
         }
-        updatedRoom = await joinPlayer(pin, {
-          id: typeof id === "string" && id ? id : `player-${Date.now()}`,
+        const joined = await joinPlayer(pin, {
+          id: typeof id === "string" ? id : undefined,
           nickname,
           avatar: typeof avatar === "string" ? avatar : "⚡",
+          token: req.headers.get("x-player-token") || (typeof body.playerToken === "string" ? body.playerToken : undefined),
         });
-        break;
+        if (!joined.ok) return NextResponse.json({ error: joined.error }, { status: joined.status });
+        // The private token is returned only here, only to the joining player.
+        return NextResponse.json(
+          { success: true, room: viewRoom(joined.room, asHost), playerId: joined.playerId, playerToken: joined.playerToken },
+          { status: 200 }
+        );
       }
 
       case "SUBMIT_ANSWER": {
@@ -53,7 +59,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pin
         if (typeof playerId !== "string" || typeof chosenOption !== "string" || !playerId || !chosenOption) {
           return NextResponse.json({ error: "Missing answer parameters" }, { status: 400 });
         }
-        const res = await submitAnswer(pin, playerId, chosenOption);
+        const token = req.headers.get("x-player-token") || (typeof body.playerToken === "string" ? body.playerToken : "");
+        const res = await submitAnswer(pin, playerId, chosenOption, token);
+        if (res.forbidden) {
+          return NextResponse.json({ success: false, error: "This answer can't be accepted for that player." }, { status: 403 });
+        }
         return NextResponse.json({
           success: res.success,
           room: viewRoom(res.room, asHost),

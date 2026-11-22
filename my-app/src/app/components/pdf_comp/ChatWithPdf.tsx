@@ -4,8 +4,10 @@ import { useState } from "react";
 import axios from "axios";
 import { Send, Terminal, Bot, User, Copy, Check } from "lucide-react";
 
-export default function ChatWithPdf({ persist_dir }: { persist_dir: string }) {
-  const [messages, setMessages] = useState<{ role: string; text: string }[]>([
+export default function ChatWithPdf({ persist_dir }: { persist_dir: string; documentId?: string }) {
+  type Citation = { page: number; excerpt: string };
+  type Msg = { role: string; text: string; citations?: Citation[]; grounded?: boolean; error?: boolean; question?: string };
+  const [messages, setMessages] = useState<Msg[]>([
     {
       role: "bot",
       text: "⚡ Yo! I'm your AssistIQ document agent. Ask me anything about this PDF and I'll extract answers directly from the indexed text.",
@@ -15,11 +17,11 @@ export default function ChatWithPdf({ persist_dir }: { persist_dir: string }) {
   const [loading, setLoading] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
-  const askQuestion = async () => {
-    if (!input.trim() || loading) return;
+  const askQuestion = async (retryText?: string) => {
+    const userText = (retryText ?? input).trim();
+    if (!userText || loading) return;
 
-    const userText = input.trim();
-    setMessages((prev) => [...prev, { role: "user", text: userText }]);
+    if (!retryText) setMessages((prev) => [...prev, { role: "user", text: userText }]);
     setInput("");
     setLoading(true);
 
@@ -28,16 +30,16 @@ export default function ChatWithPdf({ persist_dir }: { persist_dir: string }) {
       const res = await axios.post(`${backendUrl}/askquestion`, {
         question: userText,
         store: persist_dir,
+        mode: "qa",
       });
 
-      const reply = res.data?.answer || "No response extracted.";
-      setMessages((prev) => [...prev, { role: "bot", text: reply }]);
-    } catch (err: any) {
-      const errMsg = err?.response?.data?.message || err?.message || "Document search timeout. Please try again.";
       setMessages((prev) => [
         ...prev,
-        { role: "bot", text: `⚠️ [ERROR]: ${errMsg}` },
+        { role: "bot", text: res.data?.answer || "No answer was returned.", citations: res.data?.citations || [], grounded: !!res.data?.grounded },
       ]);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || (err?.code === "ERR_NETWORK" ? "Can't reach the document service. It may be waking up — try again in a minute." : err?.message) || "The document search failed.";
+      setMessages((prev) => [...prev, { role: "bot", text: errMsg, error: true, question: userText }]);
     } finally {
       setLoading(false);
     }
@@ -87,6 +89,25 @@ export default function ChatWithPdf({ persist_dir }: { persist_dir: string }) {
             >
               <div className="whitespace-pre-wrap">{msg.text}</div>
 
+              {msg.role === "bot" && msg.citations && msg.citations.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5 border-t border-[#16243f] pt-2">
+                  <span className="text-[10px] text-gray-400">Sources:</span>
+                  {msg.citations.map((c) => (
+                    <span key={c.page} title={c.excerpt} className="rounded-md border border-[#38bdf8]/40 bg-[#0ea5e9]/15 px-1.5 py-0.5 text-[10px] font-bold text-[#38bdf8]">
+                      Page {c.page}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {msg.role === "bot" && msg.grounded === false && !msg.error && (
+                <div className="mt-2 text-[10px] text-amber-300">Not answered: the document doesn&apos;t contain enough evidence.</div>
+              )}
+              {msg.error && msg.question && (
+                <button onClick={() => askQuestion(msg.question)} className="mt-2 rounded-lg border border-red-400/40 px-2 py-1 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 cursor-pointer">
+                  Retry
+                </button>
+              )}
+
               {msg.role === "bot" && (
                 <button
                   onClick={() => copyText(msg.text, i)}
@@ -128,9 +149,9 @@ export default function ChatWithPdf({ persist_dir }: { persist_dir: string }) {
           }}
         />
         <button
-          onClick={askQuestion}
+          onClick={() => askQuestion()}
           disabled={loading || !input.trim()}
-          className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-tag shadow-[0_0_15px_rgba(14,165,233,0.3)]"
+          className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_0_15px_rgba(14,165,233,0.3)]"
         >
           <Send className="w-3.5 h-3.5" /> Send
         </button>

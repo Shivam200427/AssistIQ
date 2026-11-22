@@ -80,6 +80,11 @@ function TaskCard({ task, assignment, onEdit, dragging }: { task: Task; assignme
             {task.title}
           </div>
           {task.notes && <div className="mt-0.5 line-clamp-2 text-xs text-[var(--pl-muted)]">{task.notes}</div>}
+          {task.link && (
+            <a href={task.link} onPointerDown={(e) => e.stopPropagation()} className="mt-1 inline-block text-xs font-semibold text-[var(--pl-accent-ink)] hover:underline">
+              Open →
+            </a>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-1">
             <Badge color={DIFF_COLOR[task.difficulty]}>{task.difficulty}</Badge>
             {assignment && <Badge color={assignment.color}>{assignment.name}</Badge>}

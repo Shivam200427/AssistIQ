@@ -24,7 +24,7 @@ const Footer = () => {
             </div>
             <p className="text-gray-400 leading-relaxed text-xs sm:text-sm">
               Street-smart AI built for high-performance students. 
-              Zero fluff. Only the 4 mission-critical academic tools: Email Summarizer, PDF Notes Extractor, Quiz Generator and Planly.
+              Four study tools: PDF Notes, Quiz Generator, Email Summary and Study Planner (Planly).
             </p>
             <div className="mt-4 flex items-center gap-2">
               <span className="font-tag text-xs text-[#38bdf8] bg-[#0ea5e9]/15 px-3 py-1 rounded-full border border-[#0ea5e9]/30 uppercase">
@@ -36,14 +36,14 @@ const Footer = () => {
           {/* Core Services Links */}
           <div>
             <h3 className="text-sm font-bold uppercase tracking-wider mb-4 text-[#38bdf8] flex items-center gap-2 font-tag">
-              <Paintbrush className="w-4 h-4" /> Core Arsenals
+              <Paintbrush className="w-4 h-4" /> Study tools
             </h3>
             <nav className="flex flex-col space-y-2.5 text-sm">
               {[
-                { href: "/EmailSummarizer", text: "Email Summarizer", tag: "INBOX SNIPER" },
-                { href: "/pdfNotesExtractor", text: "PDF Notes Extractor", tag: "DOC WILDSTYLE" },
-                { href: "/quizgenerator", text: "Quiz Generator", tag: "QUIZ ARENA" },
-                { href: "/planly", text: "Planly", tag: "PLAN HQ" },
+                { href: "/pdfNotesExtractor", text: "PDF Notes", tag: "START HERE" },
+                { href: "/quizgenerator", text: "Quiz Generator", tag: "PRACTICE" },
+                { href: "/EmailSummarizer", text: "Email Summary", tag: "OUTLOOK" },
+                { href: "/planly", text: "Study Planner", tag: "PLANLY" },
               ].map((link, i) => (
                 <a
                   key={i}

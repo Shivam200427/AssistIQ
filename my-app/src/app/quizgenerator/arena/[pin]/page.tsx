@@ -148,7 +148,9 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
       const pid = sessionStorage.getItem("livequiz_player_id");
       const nick = sessionStorage.getItem("livequiz_player_nickname");
       const av = sessionStorage.getItem("livequiz_player_avatar") || "⚡";
-      if (pid && nick) {
+      // Only reuse an identity that was issued for this game (and has its private token).
+      const sameGame = sessionStorage.getItem("livequiz_player_pin") === pin && !!sessionStorage.getItem("livequiz_player_token");
+      if (pid && nick && sameGame) {
         setMyPlayerId(pid);
         setMyNickname(nick);
         setMyAvatar(av);
@@ -304,6 +306,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
     await sendAction("SUBMIT_ANSWER", {
       playerId: myPlayerId,
       chosenOption: optionLabel,
+      playerToken: sessionStorage.getItem("livequiz_player_token") || "",
     });
   };
 
@@ -466,7 +469,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
           <div className="hidden md:flex items-center gap-1 bg-black/60 p-1 rounded-2xl border border-[#16243f]">
             <button
               onClick={() => setActiveTab("questions")}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold font-tag transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === "questions"
                   ? "bg-[#0ea5e9] text-[#070a12] shadow-[0_0_12px_rgba(14,165,233,0.4)]"
                   : "text-gray-400 hover:text-white"
@@ -476,7 +479,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
             </button>
             <button
               onClick={() => setActiveTab("host_qr")}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold font-tag transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === "host_qr"
                   ? "bg-[#0ea5e9] text-[#070a12] shadow-[0_0_12px_rgba(14,165,233,0.4)]"
                   : "text-gray-400 hover:text-white"
@@ -486,7 +489,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
             </button>
             <button
               onClick={() => setActiveTab("control")}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold font-tag transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === "control"
                   ? "bg-[#0ea5e9] text-[#070a12] shadow-[0_0_12px_rgba(14,165,233,0.4)]"
                   : "text-gray-400 hover:text-white"
@@ -496,7 +499,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
             </button>
             <button
               onClick={() => setActiveTab("history")}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold font-tag transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === "history"
                   ? "bg-[#0ea5e9] text-[#070a12] shadow-[0_0_12px_rgba(14,165,233,0.4)]"
                   : "text-gray-400 hover:text-white"
@@ -529,7 +532,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
               {room.status === "LOBBY" && (
                 <button
                   onClick={handleOpenAddQuestion}
-                  className="bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 transition-all cursor-pointer font-tag"
+                  className="bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 transition-all cursor-pointer"
                 >
                   <Plus className="w-4 h-4" /> Add Question
                 </button>
@@ -677,7 +680,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
                 <button
                   onClick={() => sendAction("START_GAME")}
                   disabled={room.players.length === 0}
-                  className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-black text-base px-10 py-4 rounded-2xl transition-all shadow-[0_0_25px_rgba(14,165,233,0.5)] flex items-center gap-3 cursor-pointer font-tag disabled:opacity-50 tracking-wider"
+                  className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] hover:from-[#7dd3fc] hover:to-[#38bdf8] text-[#070a12] font-black text-base px-10 py-4 rounded-2xl transition-all shadow-[0_0_25px_rgba(14,165,233,0.5)] flex items-center gap-3 cursor-pointer disabled:opacity-50 tracking-wider"
                 >
                   <Play className="w-5 h-5 fill-current" />
                   <span>START GAME NOW</span>
@@ -746,7 +749,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
 
                   <button
                     onClick={() => sendAction("END_QUESTION")}
-                    className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer font-tag"
+                    className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer"
                   >
                     End Question Early ⏱
                   </button>
@@ -802,14 +805,14 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
                 <div className="flex gap-4">
                   <button
                     onClick={() => sendAction("SHOW_LEADERBOARD")}
-                    className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] text-[#070a12] font-black text-sm px-8 py-3 rounded-xl transition-all shadow-[0_0_20px_rgba(14,165,233,0.4)] flex items-center gap-2 cursor-pointer font-tag"
+                    className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] text-[#070a12] font-black text-sm px-8 py-3 rounded-xl transition-all shadow-[0_0_20px_rgba(14,165,233,0.4)] flex items-center gap-2 cursor-pointer"
                   >
                     <span>SHOW LEADERBOARD</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => sendAction("NEXT_QUESTION")}
-                    className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-sm px-6 py-3 rounded-xl transition-colors cursor-pointer font-tag"
+                    className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-sm px-6 py-3 rounded-xl transition-colors cursor-pointer"
                   >
                     Skip to Next Q
                   </button>
@@ -870,7 +873,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
                 <div className="flex gap-4">
                   <button
                     onClick={() => sendAction("NEXT_QUESTION")}
-                    className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] text-[#070a12] font-black text-sm px-10 py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(14,165,233,0.4)] flex items-center gap-2 cursor-pointer font-tag"
+                    className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] text-[#070a12] font-black text-sm px-10 py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(14,165,233,0.4)] flex items-center gap-2 cursor-pointer"
                   >
                     <span>
                       {room.currentQuestionIndex + 1 < room.questions.length
@@ -964,13 +967,13 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
                 <div className="flex gap-4">
                   <button
                     onClick={() => setActiveTab("history")}
-                    className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs px-6 py-3 rounded-xl transition-colors cursor-pointer font-tag"
+                    className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs px-6 py-3 rounded-xl transition-colors cursor-pointer"
                   >
                     View Game History
                   </button>
                   <button
                     onClick={() => router.push("/quizgenerator")}
-                    className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] text-[#070a12] font-black text-xs px-6 py-3 rounded-xl transition-all font-tag cursor-pointer"
+                    className="bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] text-[#070a12] font-black text-xs px-6 py-3 rounded-xl transition-all cursor-pointer"
                   >
                     Host Another Arena
                   </button>
@@ -1004,7 +1007,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
                 {room.status === "LOBBY" && (
                   <button
                     onClick={() => sendAction("START_GAME")}
-                    className="bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs py-3 rounded-xl transition-all cursor-pointer font-tag col-span-2"
+                    className="bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs py-3 rounded-xl transition-all cursor-pointer col-span-2"
                   >
                     ▶ Launch Battle (Question 1)
                   </button>
@@ -1013,7 +1016,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
                 {room.status === "QUESTION_ACTIVE" && (
                   <button
                     onClick={() => sendAction("END_QUESTION")}
-                    className="bg-amber-500 hover:bg-amber-400 text-[#070a12] font-bold text-xs py-3 rounded-xl transition-all cursor-pointer font-tag col-span-2"
+                    className="bg-amber-500 hover:bg-amber-400 text-[#070a12] font-bold text-xs py-3 rounded-xl transition-all cursor-pointer col-span-2"
                   >
                     ⏹ Stop Timer & Show Results
                   </button>
@@ -1023,13 +1026,13 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
                   <>
                     <button
                       onClick={() => sendAction("SHOW_LEADERBOARD")}
-                      className="bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs py-3 rounded-xl transition-all cursor-pointer font-tag"
+                      className="bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs py-3 rounded-xl transition-all cursor-pointer"
                     >
                       🏆 Show Leaderboard
                     </button>
                     <button
                       onClick={() => sendAction("NEXT_QUESTION")}
-                      className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs py-3 rounded-xl transition-all cursor-pointer font-tag"
+                      className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs py-3 rounded-xl transition-all cursor-pointer"
                     >
                       ⏩ Next Question
                     </button>
@@ -1039,7 +1042,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
                 {room.status === "LEADERBOARD" && (
                   <button
                     onClick={() => sendAction("NEXT_QUESTION")}
-                    className="bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs py-3 rounded-xl transition-all cursor-pointer font-tag col-span-2"
+                    className="bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold text-xs py-3 rounded-xl transition-all cursor-pointer col-span-2"
                   >
                     {room.currentQuestionIndex + 1 < room.questions.length ? "⏩ Next Question" : "🏆 Show Victory Podium"}
                   </button>
@@ -1059,7 +1062,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
               </div>
               <button
                 onClick={fetchHistory}
-                className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs px-3.5 py-2 rounded-xl transition-colors cursor-pointer font-tag"
+                className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs px-3.5 py-2 rounded-xl transition-colors cursor-pointer"
               >
                 Refresh Archives
               </button>
@@ -1092,7 +1095,7 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
 
                         <button
                           onClick={() => handleExportCSV(game)}
-                          className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer font-tag"
+                          className="bg-[#131e36] hover:bg-[#1a2947] border border-[#0ea5e9]/30 text-[#38bdf8] font-bold text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
                         >
                           <FileSpreadsheet className="w-3.5 h-3.5" />
                           <span>CSV EXPORT</span>
@@ -1217,13 +1220,13 @@ export default function ArenaPage({ params }: { params: Promise<{ pin: string }>
               <div className="flex gap-2 mt-2">
                 <button
                   onClick={() => setShowQuestionModal(false)}
-                  className="flex-1 bg-black/40 hover:bg-[#131e36] text-gray-400 hover:text-white py-2 rounded-xl text-xs font-tag cursor-pointer"
+                  className="flex-1 bg-black/40 hover:bg-[#131e36] text-gray-400 hover:text-white py-2 rounded-xl text-xs cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveQuestion}
-                  className="flex-1 bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold py-2 rounded-xl text-xs font-tag cursor-pointer"
+                  className="flex-1 bg-[#0ea5e9] hover:bg-[#38bdf8] text-[#070a12] font-bold py-2 rounded-xl text-xs cursor-pointer"
                 >
                   Save Question
                 </button>

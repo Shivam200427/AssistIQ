@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   BarChart3,
   CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Headphones,
   KanbanSquare,
@@ -69,6 +72,127 @@ function RunningBadge({ go }: { go: (t: TabId) => void }) {
   );
 }
 
+
+/**
+ * Planly's section navigation.
+ * - Phones: a compact "current section" button that opens a grid of all sections.
+ * - Wider screens: a tab strip; when it overflows, fade edges and arrow buttons make the scrolling obvious.
+ */
+function PlanlyNav({ tab, go }: { tab: TabId; go: (t: TabId) => void }) {
+  const [open, setOpen] = useState(false);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const current = TABS.find((t) => t.id === tab) || TABS[0];
+  const CurrentIcon = current.icon;
+
+  const measure = useCallback(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    setEdges({ left: el.scrollLeft > 4, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
+  }, []);
+
+  useEffect(() => {
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [measure]);
+
+  useEffect(() => {
+    // Keep the active tab in view.
+    stripRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    measure();
+  }, [tab, measure]);
+
+  const scrollBy = (dx: number) => stripRef.current?.scrollBy({ left: dx, behavior: "smooth" });
+
+  return (
+    <nav className="sticky top-[68px] z-40 -mx-4 mb-5 bg-[var(--pl-bg)]/90 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6" aria-label="Planly sections">
+      {/* Phones: compact menu */}
+      <div className="sm:hidden">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls="planly-section-menu"
+          className="flex w-full cursor-pointer items-center justify-between rounded-2xl border border-[var(--pl-border)] bg-[var(--pl-card)] px-4 py-3 text-sm font-semibold text-[var(--pl-text)]"
+        >
+          <span className="flex items-center gap-2">
+            <CurrentIcon className="h-4 w-4 text-[var(--pl-accent-ink)]" />
+            {current.label}
+          </span>
+          <span className="flex items-center gap-1 text-xs text-[var(--pl-muted)]">
+            All sections <ChevronDown className={cx("h-4 w-4 transition-transform", open && "rotate-180")} />
+          </span>
+        </button>
+        {open && (
+          <div id="planly-section-menu" className="mt-2 grid grid-cols-3 gap-2 rounded-2xl border border-[var(--pl-border)] bg-[var(--pl-card)] p-2 shadow-xl">
+            {TABS.map((t) => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    go(t.id);
+                    setOpen(false);
+                  }}
+                  aria-current={tab === t.id ? "page" : undefined}
+                  className={cx(
+                    "flex cursor-pointer flex-col items-center gap-1 rounded-xl px-2 py-3 text-xs font-semibold",
+                    tab === t.id ? "bg-[var(--pl-accent)] text-[var(--pl-on-accent)]" : "text-[var(--pl-text)] hover:bg-[var(--pl-hover)]"
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Tablet / desktop: tab strip with visible overflow cues */}
+      <div className="relative hidden sm:block">
+        {edges.left && (
+          <>
+            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 rounded-l-2xl bg-gradient-to-r from-[var(--pl-card)] to-transparent" />
+            <button onClick={() => scrollBy(-240)} aria-label="Scroll sections left" className="absolute left-1 top-1/2 z-20 -translate-y-1/2 cursor-pointer rounded-full border border-[var(--pl-border)] bg-[var(--pl-card)] p-1 text-[var(--pl-text)] shadow">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          </>
+        )}
+        <div ref={stripRef} onScroll={measure} className="overflow-x-auto rounded-2xl border border-[var(--pl-border)] bg-[var(--pl-card)] p-1 [scrollbar-width:none]">
+          <div className="flex min-w-max gap-1">
+            {TABS.map((t) => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => go(t.id)}
+                  aria-current={tab === t.id ? "page" : undefined}
+                  className={cx(
+                    "flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
+                    tab === t.id ? "bg-[var(--pl-accent)] text-[var(--pl-on-accent)]" : "text-[var(--pl-muted)] hover:bg-[var(--pl-hover)] hover:text-[var(--pl-text)]"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {edges.right && (
+          <>
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-12 rounded-r-2xl bg-gradient-to-l from-[var(--pl-card)] to-transparent" />
+            <button onClick={() => scrollBy(240)} aria-label="Scroll sections right" className="absolute right-1 top-1/2 z-20 -translate-y-1/2 cursor-pointer rounded-full border border-[var(--pl-border)] bg-[var(--pl-card)] p-1 text-[var(--pl-text)] shadow">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </>
+        )}
+      </div>
+    </nav>
+  );
+}
+
 export default function PlanlyApp() {
   const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<TabId>("overview");
@@ -80,8 +204,13 @@ export default function PlanlyApp() {
   // Data lives in localStorage, so render only on the client to avoid a hydration mismatch.
   useEffect(() => {
     setMounted(true);
-    const fromHash = window.location.hash.slice(1) as TabId;
-    if (TABS.some((t) => t.id === fromHash)) setTab(fromHash);
+    const syncFromHash = () => {
+      const fromHash = window.location.hash.slice(1) as TabId;
+      if (TABS.some((t) => t.id === fromHash)) setTab(fromHash);
+    };
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
   }, []);
 
   const go = useCallback((t: TabId) => {
@@ -156,27 +285,7 @@ export default function PlanlyApp() {
           )}
         </header>
 
-        <nav className="sticky top-[68px] z-40 -mx-4 mb-5 overflow-x-auto bg-[var(--pl-bg)]/90 px-4 py-2 backdrop-blur-md custom-scroll sm:-mx-6 sm:px-6" aria-label="Planly sections">
-          <div className="flex min-w-max gap-1 rounded-2xl border border-[var(--pl-border)] bg-[var(--pl-card)] p-1">
-            {TABS.map((t) => {
-              const Icon = t.icon;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => go(t.id)}
-                  aria-current={tab === t.id ? "page" : undefined}
-                  className={cx(
-                    "flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
-                    tab === t.id ? "bg-[var(--pl-accent)] text-[var(--pl-on-accent)]" : "text-[var(--pl-muted)] hover:bg-[var(--pl-hover)] hover:text-[var(--pl-text)]"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
+        <PlanlyNav tab={tab} go={go} />
 
         {!mounted ? (
           <PanelLoading />
